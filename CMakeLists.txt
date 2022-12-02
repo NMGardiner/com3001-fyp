@@ -13,13 +13,9 @@ add_executable(testbench
 
 target_include_directories(testbench PRIVATE
 	# Esch384 reference
-	src/esch384-ref/api.h
-	src/esch384-ref/esch_cfg.h
-	src/esch384-ref/sparkle_ref.h
+	src/esch384-ref/
 	# Esch384 SIMD
-	src/esch384-simd/api.h
-	src/esch384-simd/esch_cfg.h
-	src/esch384-simd/sparkle_simd.h
+	src/esch384-simd/
 )
 
 add_compile_options(
