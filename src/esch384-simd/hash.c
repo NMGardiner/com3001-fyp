@@ -18,6 +18,9 @@
 // see <http://www.gnu.org/licenses/>.                                       //
 ///////////////////////////////////////////////////////////////////////////////
 
+#include "toggle_defines.h"
+
+#if ENABLE_ESCH384
 
 // This source code file should be compiled with the following set of flags:
 // -std=c99 -Wall -Wextra -Wshadow -fsanitize=address,undefined -O2
@@ -31,7 +34,7 @@
 #include <stddef.h>  // for size_t
 #include <string.h>  // for memcpy, memset
 #include "esch_cfg.h"
-#include "sparkle_simd.h"
+#include "sparkle-simd/sparkle_simd.h"
 
 
 typedef unsigned char UChar;
@@ -181,3 +184,5 @@ int crypto_hash_simd(UChar *out, const UChar *in, ULLInt inlen)
   
   return 0;
 }
+
+#endif // ENABLE_ESCH384

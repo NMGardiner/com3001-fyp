@@ -18,6 +18,9 @@
 // see <http://www.gnu.org/licenses/>.                                       //
 ///////////////////////////////////////////////////////////////////////////////
 
+#include "toggle_defines.h"
+
+#if ENABLE_ESCH384
 
 #ifndef ESCH_CFG_H
 #define ESCH_CFG_H
@@ -62,3 +65,5 @@
 #endif
 
 #endif  // ESCH_CFG_H
+
+#endif // ENABLE_ESCH384

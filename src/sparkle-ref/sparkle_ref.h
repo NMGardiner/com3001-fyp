@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////
-// esch_cfg.h: Configuration of instances of hash function ESCH.             //
+// sparkle_ref.h: Reference C99 implementation of the SPARKLE permutation.   //
 // This file is part of the SPARKLE submission to NIST's LW Crypto Project.  //
 // Version 1.1.2 (2020-10-30), see <http://www.cryptolux.org/> for updates.  //
 // Authors: The SPARKLE Group (C. Beierle, A. Biryukov, L. Cardoso dos       //
@@ -20,50 +20,32 @@
 
 #include "toggle_defines.h"
 
-#if ENABLE_ESCH384
+#if ENABLE_SPARKLE
 
-#ifndef ESCH_CFG_H
-#define ESCH_CFG_H
+#ifndef SPARKLE_REF_H
+#define SPARKLE_REF_H
 
-// Define the ESCH instance here (api.h has to match!). The main instance is
-// ESCH256, which has a block size of 128 bits and a digest size of 256 bits.
-// Another instance of ESCH is ESCH384.
-
-#define ESCH384
-
-
-///////////////////
-#if defined ESCH256
-///////////////////
-
-#define ESCH_DIGEST_LEN     256
-
-#define SPARKLE_STATE       384
-#define SPARKLE_RATE        128
-#define SPARKLE_CAPACITY    256
-
-#define SPARKLE_STEPS_SLIM  7
-#define SPARKLE_STEPS_BIG   11
-
-
-/////////////////////
-#elif defined ESCH384
-/////////////////////
-
-#define ESCH_DIGEST_LEN     384
-
-#define SPARKLE_STATE       512
-#define SPARKLE_RATE        128
-#define SPARKLE_CAPACITY    384
-
-#define SPARKLE_STEPS_SLIM  8
-#define SPARKLE_STEPS_BIG   12
-
-
+#if defined(_MSC_VER) && !defined(__clang__) && !defined(__ICL)
+typedef unsigned __int8 uint8_t;
+typedef unsigned __int32 uint32_t;
 #else
-#error "Invalid definition of ESCH instance."
-#endif
+#include <stdint.h>
+#endif  // _MSC_VER
 
-#endif  // ESCH_CFG_H
+#define MAX_BRANCHES 8
 
-#endif // ENABLE_ESCH384
+typedef struct {
+  uint32_t x[MAX_BRANCHES];
+  uint32_t y[MAX_BRANCHES];
+} SparkleState;
+
+void sparkle_ref(SparkleState *state, int brans, int steps);
+void sparkle_inv_ref(SparkleState *state, int brans, int steps);
+
+void clear_state_ref(SparkleState *state, int brans);
+void print_state_ref(const SparkleState *state, int brans);
+void test_sparkle_ref(int brans, int steps);
+
+#endif  // SPARKLE_REF_H
+
+#endif // ENABLE_SPARKLE
