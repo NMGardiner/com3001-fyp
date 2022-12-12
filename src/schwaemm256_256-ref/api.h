@@ -21,7 +21,10 @@ typedef unsigned long long int ULLInt;
 int crypto_aead_encrypt(UChar* c, ULLInt* clen, const UChar* m, ULLInt mlen, \
 	const UChar* ad, ULLInt adlen, const UChar* nsec, const UChar* npub, \
 	const UChar* k);
-//---------------------------------------------------------
 
+int crypto_aead_decrypt(UChar* m, ULLInt* mlen, UChar* nsec, const UChar* c, \
+	ULLInt clen, const UChar* ad, ULLInt adlen, const UChar* npub, \
+	const UChar* k);
+//---------------------------------------------------------
 
 #endif // ENABLE_SCHWAEMM256_256

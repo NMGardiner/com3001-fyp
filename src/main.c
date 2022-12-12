@@ -143,18 +143,39 @@ void schwaemm256_256_time_execution(void) {
         associated_data[i] = (UChar)i;
     }
 
-    UChar ciphertext[MAX_MESSAGE_LENGTH + CRYPTO_ABYTES];
+    UChar ref_encryption_outputs[(MAX_MESSAGE_LENGTH + 1) * (MAX_ASSOCIATED_DATA_LENGTH + 1)][MAX_MESSAGE_LENGTH + CRYPTO_ABYTES];
+    UChar ref_decryption_outputs[(MAX_MESSAGE_LENGTH + 1) * (MAX_ASSOCIATED_DATA_LENGTH + 1)][MAX_MESSAGE_LENGTH];
+
     ULLInt ciphertext_len = 0;
+    ULLInt reversed_plaintext_len = 0;
+
+    int all_match = 1;
+
+    clock_t start_time_ref = clock();
 
     for (ULLInt plaintext_len = 0; plaintext_len <= MAX_MESSAGE_LENGTH; plaintext_len++) {
         for (ULLInt ad_len = 0; ad_len <= MAX_ASSOCIATED_DATA_LENGTH; ad_len++) {
-            int ret_val = crypto_aead_encrypt(ciphertext, &ciphertext_len, plaintext,
-                plaintext_len, associated_data, ad_len, NULL, nonce, key);
+            const int output_index = (plaintext_len * MAX_MESSAGE_LENGTH) + MAX_ASSOCIATED_DATA_LENGTH;
+            int ret_val = crypto_aead_encrypt(ref_encryption_outputs[output_index], &ciphertext_len,
+                plaintext, plaintext_len, associated_data, ad_len, NULL, nonce, key);
 
-            printf("Ciphertext = ");
-            print_ciphertext(ciphertext, ciphertext_len);
-            printf("\n");
+            ret_val = crypto_aead_decrypt(ref_decryption_outputs[output_index], &reversed_plaintext_len, NULL,
+                ref_encryption_outputs[output_index], ciphertext_len, associated_data, ad_len, nonce, key);
+
+            if (memcmp(plaintext, ref_decryption_outputs[output_index], ((size_t)plaintext_len))) {
+                printf("ERROR - Plaintext and decryption result differ!\n");
+                all_match = 0;
+            }
+            else {
+                printf("Plaintext and decryption result match.\n");
+            }
         }
     }
+
+    printf("Reference output validation %s\n", all_match ? "successful." : "unsuccessful!");
+
+    clock_t end_time_ref = clock();
+    double execution_time_ref = (double)(end_time_ref - start_time_ref);
+    printf("Timed Schwaemm algorithms. Ref = %f ticks, Opt = %f ticks.\n", execution_time_ref, execution_time_ref);
 }
 #endif // ENABLE_SCHWAEMM256_256
