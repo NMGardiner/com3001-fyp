@@ -22,6 +22,12 @@
 #include <stdio.h>
 #include "sparkle_simd.h"
 
+#define ENABLE_SIMD 1
+
+#if ENABLE_SIMD
+#include <immintrin.h>
+#endif // ENABLE_SIMD
+
 
 #define ROT(x, n) (((x) >> (n)) | ((x) << (32-(n))))
 #define ELL(x) (ROT(((x) ^ ((x) << 16)), 16))
@@ -33,33 +39,136 @@ static const uint32_t RCON[MAX_BRANCHES] = {      \
   0xBB1185EB, 0x4F7C7B57, 0xCFBFA1C8, 0xC2B3293D  \
 };
 
+#if ENABLE_SIMD
+// Equivalent to ROT.
+// For each value in `in`: Bitwise or of shift right by count, shift left by 32 - count.
+__inline __m256i rot_simd(__m256i in, int count) {
+    return _mm256_or_si256(
+        _mm256_srlv_epi32(in, _mm256_set1_epi32(count)),
+        _mm256_sllv_epi32(in, _mm256_set1_epi32(32 - count)));
+}
+
+// Equivalent to + ROT.
+__inline __m256i rot_add_simd(__m256i left, __m256i right, int count) {
+    return _mm256_add_epi32(left, rot_simd(right, count));
+}
+
+// Equivalent to ^ ROT
+__inline __m256i rot_xor_simd(__m256i left, __m256i right, int count) {
+    return _mm256_xor_si256(left, rot_simd(right, count));
+}
+
+// For debugging.
+void print_m256i(__m256i in, unsigned int in_len, char* label) {
+    uint32_t* ptr = (uint32_t*)&in;
+    printf("%s = [ ", label);
+    for (int i = 0; i < in_len; i++) {
+        printf("%s%u", i == 0 ? "" : ", ", ptr[i]);
+    }
+    printf(" ]\n");
+}
+
+// For debugging.
+void print_state(uint32_t* in, unsigned int in_len,char* label) {
+    printf("%s = [ ", label);
+    for (int i = 0; i < in_len; i++) {
+        printf("%s%u", i == 0 ? "" : ", ", in[i]);
+    }
+    printf(" ]\n");
+}
+#endif // ENABLE_SIMD
 
 void sparkle_simd(uint32_t *state, int brans, int steps)
 {
   int i, j;  // Step and branch counter
   uint32_t rc, tmpx, tmpy, x0, y0;
-  
+
+#if ENABLE_SIMD
+  // RCON, but rearranged to match the order of pairs after loading them
+  // into the vector registers.
+  const __m256i round_constants = _mm256_setr_epi32(
+      0xB7E15162, 0xBF715880, 0xBB1185EB, 0x4F7C7B57,
+      0x38B4DA56, 0x324E7738, 0xCFBFA1C8, 0xC2B3293D);
+#endif // ENABLE_SIMD
+
   for(i = 0; i < steps; i ++) {
     // Add round constant
     state[1] ^= RCON[i%MAX_BRANCHES];
     state[3] ^= i;
 
     // ARXBOX layer
+#if ENABLE_SIMD
+    // Results in the following:
+    // state    = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    // state_j  = [0, 2, 8, 10, 4, 6, 12, 14]
+    // state_j1 = [1, 3, 9, 11, 5, 7, 13, 15]
+    __m256i state_j = _mm256_i32gather_epi32(state,
+        _mm256_setr_epi32(0, 2, 8, 10, 4, 6, 12, 14), sizeof(uint32_t));
+    __m256i state_j1 = _mm256_i32gather_epi32(state,
+        _mm256_setr_epi32(1, 3, 9, 11, 5, 7, 13, 15), sizeof(uint32_t));
+
+    // Equivalent to:
+    // state[j] += ROT(state[j + 1], 31);
+    // state[j + 1] ^= ROT(state[j], 24);
+    // state[j] ^= rc;
+    state_j = rot_add_simd(state_j, state_j1, 31);
+    state_j1 = rot_xor_simd(state_j1, state_j, 24);
+    state_j = _mm256_xor_si256(state_j, round_constants);
+
+    // Equivalent to:
+    // state[j] += ROT(state[j + 1], 17);
+    // state[j + 1] ^= ROT(state[j], 17);
+    // state[j] ^= rc;
+    state_j = rot_add_simd(state_j, state_j1, 17);
+    state_j1 = rot_xor_simd(state_j1, state_j, 17);
+    state_j = _mm256_xor_si256(state_j, round_constants);
+
+    // Equivalent to:
+    // state[j] += state[j + 1];
+    // state[j + 1] ^= ROT(state[j], 31);
+    // state[j] ^= rc;
+    state_j = _mm256_add_epi32(state_j, state_j1);
+    state_j1 = rot_xor_simd(state_j1, state_j, 31);
+    state_j = _mm256_xor_si256(state_j, round_constants);
+
+    // Equivalent to:
+    // state[j] += ROT(state[j + 1], 24);
+    // state[j + 1] ^= ROT(state[j], 16);
+    // state[j] ^= rc;
+    state_j = rot_add_simd(state_j, state_j1, 24);
+    state_j1 = rot_xor_simd(state_j1, state_j, 16);
+    state_j = _mm256_xor_si256(state_j, round_constants);
+
+    // Unpack and de-interleave the data from the registers. Results in:
+    // state_lo = [0, 1, 2, 3, 4, 5, 6, 7]
+    // state_hi = [8, 9, 10, 11, 12, 13, 14, 15]
+    // This is then copied back to `state` using memcpy.
+    // A different length is required for the second memcpy, and depends on `brans`.
+    // e.g. for Sparkle384, brans = 6. Therefore there are 12 32-bit elements. The first
+    // memcpy operation copies the first 8, so the latter must copy (2 * 6) - 8 = 4 elements.
+    __m256i state_lo = _mm256_unpacklo_epi32(state_j, state_j1);
+    __m256i state_hi = _mm256_unpackhi_epi32(state_j, state_j1);
+    uint32_t* lo_ptr = (uint32_t*)&state_lo;
+    uint32_t* hi_ptr = (uint32_t*)&state_hi;
+    memcpy(state, lo_ptr, 8 * sizeof(uint32_t));
+    memcpy(state + 8, hi_ptr, ((2 * brans) - 8) * sizeof(uint32_t));
+#else
     for (j = 0; j < 2 * brans; j += 2) {
-      rc = RCON[j>>1];
-      state[j] += ROT(state[j+1], 31);
-      state[j+1] ^= ROT(state[j], 24);
-      state[j] ^= rc;
-      state[j] += ROT(state[j+1], 17);
-      state[j+1] ^= ROT(state[j], 17);
-      state[j] ^= rc;
-      state[j] += state[j+1];
-      state[j+1] ^= ROT(state[j], 31);
-      state[j] ^= rc;
-      state[j] += ROT(state[j+1], 24);
-      state[j+1] ^= ROT(state[j], 16);
-      state[j] ^= rc;
+        rc = RCON[j >> 1];
+        state[j] += ROT(state[j + 1], 31);
+        state[j + 1] ^= ROT(state[j], 24);
+        state[j] ^= rc;
+        state[j] += ROT(state[j + 1], 17);
+        state[j + 1] ^= ROT(state[j], 17);
+        state[j] ^= rc;
+        state[j] += state[j + 1];
+        state[j + 1] ^= ROT(state[j], 31);
+        state[j] ^= rc;
+        state[j] += ROT(state[j + 1], 24);
+        state[j + 1] ^= ROT(state[j], 16);
+        state[j] ^= rc;
     }
+#endif // ENABLE_SIMD
     // Linear layer
     tmpx = x0 = state[0];
     tmpy = y0 = state[1];

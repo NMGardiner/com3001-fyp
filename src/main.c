@@ -490,7 +490,7 @@ int main()
         e384ref_crypto_hash,
         e384simd_crypto_hash);
 
-    printf("Esch2384 validation: %s\n", esch384_validation ? "SUCCESS" : "FAILURE");
+    printf("Esch384 validation: %s\n", esch384_validation ? "SUCCESS" : "FAILURE");
 
     int s128128_validation = verify_schwaemm(
         0,

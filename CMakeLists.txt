@@ -54,5 +54,5 @@ target_include_directories(testbench PRIVATE
 )
 
 add_compile_options(
-	-std=c99 -Wall -Wextra -Wshadow -fsanitize=address,undefined -mavx
+	-std=c99 -Wall -Wextra -Wshadow -fsanitize=address,undefined -mavx2
 )
