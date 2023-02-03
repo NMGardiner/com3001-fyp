@@ -1,13 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <Windows.h>
 
-#include <immintrin.h>
+#if defined(_WIN32)
+#include <Windows.h>
+#endif // defined(_WIN32)
 
 #include <inttypes.h>
 
-// TODO: Sort this!
 #include "esch256_ref/api.h"
 #include "esch256_simd/api.h"
 
@@ -33,6 +33,46 @@ typedef unsigned char UChar;
 typedef unsigned long long int ULLInt;
 
 #define NUM_RESULTS 20
+
+//
+// A timer abstraction for working with MSVC and GCC
+//
+
+struct timer {
+#if defined(_WIN32)
+    LARGE_INTEGER start;
+    LARGE_INTEGER frequency;
+#else
+    struct timespec start;
+#endif
+};
+
+void start_timer(struct timer* t) {
+#if defined(_WIN32)
+    QueryPerformanceFrequency(&(t->frequency));
+    QueryPerformanceCounter(&(t->start));
+#else
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &(t->start));
+#endif
+}
+
+uint64_t end_timer(struct timer* t) {
+#if defined(_WIN32)
+    LARGE_INTEGER end;
+    QueryPerformanceCounter(&end);
+    LARGE_INTEGER elapsed_microseconds;
+    elapsed_microseconds.QuadPart = end.QuadPart - t->start.QuadPart;
+    elapsed_microseconds.QuadPart *= 1000000;
+    elapsed_microseconds.QuadPart /= t->frequency.QuadPart;
+    return elapsed_microseconds;
+#else
+    struct timespec end;
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);
+    uint64_t elapsed_microseconds = (end.tv_sec - t->start.tv_sec) * 1000000;
+    elapsed_microseconds += (end.tv_nsec - t->start.tv_nsec) / 1000;
+    return elapsed_microseconds;
+#endif
+}
 
 void print_uchar_arr(const UChar* arr, ULLInt length) {
     for (int i = 0; i < length; i++) {
@@ -93,84 +133,59 @@ void time_schwaemm(
 
     ULLInt ciphertext_len = 0;
 
-    LARGE_INTEGER start, end, elapsed_microseconds;
-    LARGE_INTEGER frequency;
+    struct timer t;
 
     //
     // Reference encryption
     //
 
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&start);
+    start_timer(&t);
 
     for (unsigned int i = 0; i < num_runs; i++) {
         ref_enc_function(ref_enc_results[i], &ciphertext_len, plaintext, input_len, associated_data, ad_len,
             NULL, nonce, key);
     }
 
-    QueryPerformanceCounter(&end);
-    elapsed_microseconds.QuadPart = end.QuadPart - start.QuadPart;
-    elapsed_microseconds.QuadPart *= 1000000;
-    elapsed_microseconds.QuadPart /= frequency.QuadPart;
-
-    LARGE_INTEGER ref_enc_time = elapsed_microseconds;
+    uint64_t ref_enc_time = end_timer(&t);
 
     //
     // Reference decryption
     //
 
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&start);
+    start_timer(&t);
 
     for (unsigned int i = 0; i < num_runs; i++) {
         ref_dec_function(ref_dec_results[i], &ciphertext_len, NULL, ref_enc_results[i], output_len,
             associated_data, ad_len, nonce, key);
     }
 
-    QueryPerformanceCounter(&end);
-    elapsed_microseconds.QuadPart = end.QuadPart - start.QuadPart;
-    elapsed_microseconds.QuadPart *= 1000000;
-    elapsed_microseconds.QuadPart /= frequency.QuadPart;
-
-    LARGE_INTEGER ref_dec_time = elapsed_microseconds;
+    uint64_t ref_dec_time = end_timer(&t);
 
     //
     // SIMD encryption
     //
 
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&start);
+    start_timer(&t);
 
     for (unsigned int i = 0; i < num_runs; i++) {
         simd_enc_function(simd_enc_results[i], &ciphertext_len, plaintext, input_len, associated_data,
             ad_len, NULL, nonce, key);
     }
 
-    QueryPerformanceCounter(&end);
-    elapsed_microseconds.QuadPart = end.QuadPart - start.QuadPart;
-    elapsed_microseconds.QuadPart *= 1000000;
-    elapsed_microseconds.QuadPart /= frequency.QuadPart;
-
-    LARGE_INTEGER simd_enc_time = elapsed_microseconds;
+    uint64_t simd_enc_time = end_timer(&t);
 
     //
     // SIMD decryption
     //
 
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&start);
+    start_timer(&t);
 
     for (unsigned int i = 0; i < num_runs; i++) {
         ref_dec_function(simd_dec_results[i], &ciphertext_len, NULL, simd_enc_results[i], output_len,
             associated_data, ad_len, nonce, key);
     }
 
-    QueryPerformanceCounter(&end);
-    elapsed_microseconds.QuadPart = end.QuadPart - start.QuadPart;
-    elapsed_microseconds.QuadPart *= 1000000;
-    elapsed_microseconds.QuadPart /= frequency.QuadPart;
-
-    LARGE_INTEGER simd_dec_time = elapsed_microseconds;
+    uint64_t simd_dec_time = end_timer(&t);
 
     //
     // Validation
@@ -188,10 +203,10 @@ void time_schwaemm(
         }
     }
 
-    printf("\nReference time (enc): %"PRId64"us\n", ref_enc_time.QuadPart);
-    printf("Reference time (dec): %"PRId64"us\n", ref_dec_time.QuadPart);
-    printf("Optimised time (enc): %"PRId64"us\n", simd_enc_time.QuadPart);
-    printf("Optimised time (dec): %"PRId64"us\n", simd_dec_time.QuadPart);
+    printf("\nReference time (enc): %"PRIu64"us\n", ref_enc_time);
+    printf("Reference time (dec): %"PRIu64"us\n", ref_dec_time);
+    printf("Optimised time (enc): %"PRIu64"us\n", simd_enc_time);
+    printf("Optimised time (dec): %"PRIu64"us\n", simd_dec_time);
     printf("Results %s\n", do_results_match ? "match." : "do not match!");
 
     //
@@ -353,40 +368,27 @@ int time_esch(
     }
 
     for (ULLInt i = 0; i < num_runs; i++) {
-        LARGE_INTEGER start, end, elapsed_microseconds;
-        LARGE_INTEGER frequency;
+        struct timer t;
 
         //
         // Reference
         //
 
-        QueryPerformanceFrequency(&frequency);
-        QueryPerformanceCounter(&start);
+        start_timer(&t);
 
         ref_function(ref_results[i], plaintext, input_len);
 
-        QueryPerformanceCounter(&end);
-        elapsed_microseconds.QuadPart = end.QuadPart - start.QuadPart;
-        elapsed_microseconds.QuadPart *= 1000000;
-        elapsed_microseconds.QuadPart /= frequency.QuadPart;
-
-        ref_timings[i] = elapsed_microseconds.QuadPart;
+        ref_timings[i] = end_timer(&t);
 
         //
         // SIMD
         //
 
-        QueryPerformanceFrequency(&frequency);
-        QueryPerformanceCounter(&start);
+        start_timer(&t);
 
         simd_function(simd_results[i], plaintext, input_len);
 
-        QueryPerformanceCounter(&end);
-        elapsed_microseconds.QuadPart = end.QuadPart - start.QuadPart;
-        elapsed_microseconds.QuadPart *= 1000000;
-        elapsed_microseconds.QuadPart /= frequency.QuadPart;
-
-        simd_timings[i] = elapsed_microseconds.QuadPart;
+        simd_timings[i] = end_timer(&t);
     }
 
     //
