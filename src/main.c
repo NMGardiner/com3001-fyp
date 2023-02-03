@@ -64,7 +64,7 @@ uint64_t end_timer(struct timer* t) {
     elapsed_microseconds.QuadPart = end.QuadPart - t->start.QuadPart;
     elapsed_microseconds.QuadPart *= 1000000;
     elapsed_microseconds.QuadPart /= t->frequency.QuadPart;
-    return elapsed_microseconds;
+    return elapsed_microseconds.QuadPart;
 #else
     struct timespec end;
     clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);
