@@ -32,6 +32,8 @@
 typedef unsigned char UChar;
 typedef unsigned long long int ULLInt;
 
+#define NUM_RESULTS 20
+
 void print_uchar_arr(const UChar* arr, ULLInt length) {
     for (int i = 0; i < length; i++) {
         printf("%02X", arr[i]);
@@ -200,7 +202,7 @@ void time_schwaemm(
     free(nonce);
     free(associated_data);
 
-    for (int i = 0; i < num_runs; i++) {
+    for (unsigned int i = 0; i < num_runs; i++) {
         free(ref_enc_results[i]);
         free(ref_dec_results[i]);
         free(simd_enc_results[i]);
@@ -329,12 +331,14 @@ int verify_schwaemm(
     return validation_result;
 }
 
-void time_esch(
+int time_esch(
     unsigned int num_runs,
     ULLInt input_len,
     ULLInt output_len,
     int (*ref_function)(UChar* out, const UChar* in, ULLInt inlen),
-    int (*simd_function)(UChar* out, const UChar* in, ULLInt inlen)
+    int (*simd_function)(UChar* out, const UChar* in, ULLInt inlen),
+    long long* ref_timings,
+    long long* simd_timings
 ) {
     UChar* plaintext = malloc(input_len * sizeof(UChar));
     for (int i = 0; i < input_len; i++) {
@@ -348,44 +352,42 @@ void time_esch(
         simd_results[i] = malloc(output_len * sizeof(UChar));
     }
 
-    LARGE_INTEGER start, end, elapsed_microseconds;
-    LARGE_INTEGER frequency;
+    for (ULLInt i = 0; i < num_runs; i++) {
+        LARGE_INTEGER start, end, elapsed_microseconds;
+        LARGE_INTEGER frequency;
 
-    //
-    // Reference
-    //
+        //
+        // Reference
+        //
 
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&start);
+        QueryPerformanceFrequency(&frequency);
+        QueryPerformanceCounter(&start);
 
-    for (unsigned int i = 0; i < num_runs; i++) {
         ref_function(ref_results[i], plaintext, input_len);
-    }
 
-    QueryPerformanceCounter(&end);
-    elapsed_microseconds.QuadPart = end.QuadPart - start.QuadPart;
-    elapsed_microseconds.QuadPart *= 1000000;
-    elapsed_microseconds.QuadPart /= frequency.QuadPart;
+        QueryPerformanceCounter(&end);
+        elapsed_microseconds.QuadPart = end.QuadPart - start.QuadPart;
+        elapsed_microseconds.QuadPart *= 1000000;
+        elapsed_microseconds.QuadPart /= frequency.QuadPart;
 
-    LARGE_INTEGER ref_time = elapsed_microseconds;
-    
-    //
-    // SIMD
-    //
+        ref_timings[i] = elapsed_microseconds.QuadPart;
 
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&start);
+        //
+        // SIMD
+        //
 
-    for (unsigned int i = 0; i < num_runs; i++) {
+        QueryPerformanceFrequency(&frequency);
+        QueryPerformanceCounter(&start);
+
         simd_function(simd_results[i], plaintext, input_len);
+
+        QueryPerformanceCounter(&end);
+        elapsed_microseconds.QuadPart = end.QuadPart - start.QuadPart;
+        elapsed_microseconds.QuadPart *= 1000000;
+        elapsed_microseconds.QuadPart /= frequency.QuadPart;
+
+        simd_timings[i] = elapsed_microseconds.QuadPart;
     }
-
-    QueryPerformanceCounter(&end);
-    elapsed_microseconds.QuadPart = end.QuadPart - start.QuadPart;
-    elapsed_microseconds.QuadPart *= 1000000;
-    elapsed_microseconds.QuadPart /= frequency.QuadPart;
-
-    LARGE_INTEGER simd_time = elapsed_microseconds;
 
     //
     // Validation
@@ -400,10 +402,6 @@ void time_esch(
         }
     }
 
-    printf("\nReference time: %"PRId64"us\n", ref_time.QuadPart);
-    printf("Optimised time: %"PRId64"us\n", simd_time.QuadPart);
-    printf("Results %s\n", do_results_match ? "match." : "do not match!");
-
     //
     // Tidy up
     //
@@ -417,6 +415,8 @@ void time_esch(
 
     free(ref_results);
     free(simd_results);
+
+    return do_results_match;
 }
 
 int verify_esch(
@@ -474,6 +474,30 @@ int verify_esch(
     return validation_result;
 }
 
+void print_results_array(long long* arr, unsigned int in_len, const char* label) {
+    printf("%s = [ ", label);
+    for (unsigned int i = 0; i < in_len; i++) {
+        printf("%s%lldus", i ? ", " : "", arr[i]);
+    }
+    printf(" ]\n");
+}
+
+void print_double_array(double *arr, unsigned int in_len, const char* label) {
+    printf("%s = [ ", label);
+    for (unsigned int i = 0; i < in_len; i++) {
+        printf("%s%.1f%%", i ? ", " : "", arr[i]);
+    }
+    printf(" ]\n");
+}
+
+double calculate_average(double* arr, unsigned int in_len) {
+    double result = 0.0f;
+    for (unsigned int i = 0; i < in_len; i++) {
+        result += arr[i];
+    }
+    return result / (double)in_len;
+}
+
 int main()
 {
     int esch256_validation = verify_esch(
@@ -482,15 +506,11 @@ int main()
         e256ref_crypto_hash,
         e256simd_crypto_hash);
 
-    printf("Esch256 validation: %s\n", esch256_validation ? "SUCCESS" : "FAILURE");
-
     int esch384_validation = verify_esch(
         0,
         E384REF_CRYPTO_BYTES,
         e384ref_crypto_hash,
         e384simd_crypto_hash);
-
-    printf("Esch384 validation: %s\n", esch384_validation ? "SUCCESS" : "FAILURE");
 
     int s128128_validation = verify_schwaemm(
         0,
@@ -540,24 +560,54 @@ int main()
 
     printf("Schwaemm256_256 validation: %s\n", s256256_validation ? "SUCCESS" : "FAILURE");
 
-    printf("\nEsch384 Timing:\n");
-    for (unsigned int i = 0; i < 8; i++) {
-        time_esch(1, 1 << 12, E384REF_CRYPTO_BYTES, e384ref_crypto_hash, e384simd_crypto_hash);
+    printf("\nEsch256:\n");
+    {
+        long long ref_results[NUM_RESULTS];
+        long long simd_results[NUM_RESULTS];
+
+        if (time_esch(NUM_RESULTS, 1 << 16, E256REF_CRYPTO_BYTES, e256ref_crypto_hash,
+            e256simd_crypto_hash, ref_results, simd_results) || 1) {
+            print_results_array(ref_results, NUM_RESULTS, "ref  ");
+            print_results_array(simd_results, NUM_RESULTS, "opt  ");
+
+            double diffs[NUM_RESULTS];
+            for (int i = 0; i < NUM_RESULTS; i++) {
+                long long diff = ref_results[i] - simd_results[i];
+                diffs[i] = ((double)diff / ref_results[i]) * 100.0f;
+            }
+            print_double_array(diffs, NUM_RESULTS, "%diff");
+            printf("Avg = %.2f%%\n", calculate_average(diffs, NUM_RESULTS));
+        }
+        else {
+            printf("[ERROR] Esch256 timing yielded incorrect results!\n");
+        }
+
+        printf("Validation: %s\n", esch256_validation ? "SUCCESS" : "FAILURE");
     }
 
-    printf("\nSchwaemm256_256 Timing:\n");
-    for (unsigned int i = 0; i < 8; i++) {
-        time_schwaemm(
-            1,
-            1 << 12,
-            (1 << 12) + S256256REF_CRYPTO_ABYTES,
-            S256256REF_CRYPTO_KEYBYTES,
-            S256256REF_CRYPTO_NPUBBYTES,
-            32,
-            s256256ref_crypto_aead_encrypt,
-            s256256ref_crypto_aead_decrypt,
-            s256256simd_crypto_aead_encrypt,
-            s256256simd_crypto_aead_decrypt);
+    printf("\nEsch384:\n");
+    {
+        long long ref_results[NUM_RESULTS];
+        long long simd_results[NUM_RESULTS];
+        
+        if (time_esch(NUM_RESULTS, 1 << 16, E384REF_CRYPTO_BYTES, e384ref_crypto_hash,
+            e384simd_crypto_hash, ref_results, simd_results) || 1) {
+            print_results_array(ref_results, NUM_RESULTS, "ref  ");
+            print_results_array(simd_results, NUM_RESULTS, "opt  ");
+
+            double diffs[NUM_RESULTS];
+            for (int i = 0; i < NUM_RESULTS; i++) {
+                long long diff = ref_results[i] - simd_results[i];
+                diffs[i] = ((double)diff / ref_results[i]) * 100.0f;
+            }
+            print_double_array(diffs, NUM_RESULTS, "%diff");
+            printf("Avg = %.2f%%\n", calculate_average(diffs, NUM_RESULTS));
+        }
+        else {
+            printf("[ERROR] Esch384 timing yielded incorrect results!\n");
+        }
+
+        printf("Validation: %s\n", esch384_validation ? "SUCCESS" : "FAILURE");
     }
 
     return 1;

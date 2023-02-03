@@ -23,6 +23,10 @@
 #include "sparkle_simd.h"
 
 #define ENABLE_SIMD 1
+// Test if gathering elements with a set stride (e.g. 0, 2, 4, 6...) is any faster
+// than gathering elements 'at random'. Timing suggests it's actually slower due to
+// needing additional permute instructions to store, but look into this more!
+#define SHUFFLE_STATE 1 
 
 #if ENABLE_SIMD
 #include <immintrin.h>
@@ -84,11 +88,17 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
   uint32_t rc, tmpx, tmpy, x0, y0;
 
 #if ENABLE_SIMD
+#if SHUFFLE_STATE
   // RCON, but rearranged to match the order of pairs after loading them
   // into the vector registers.
   const __m256i round_constants = _mm256_setr_epi32(
       0xB7E15162, 0xBF715880, 0xBB1185EB, 0x4F7C7B57,
       0x38B4DA56, 0x324E7738, 0xCFBFA1C8, 0xC2B3293D);
+#else
+  const __m256i round_constants = _mm256_setr_epi32(
+      0xB7E15162, 0xBF715880, 0x38B4DA56, 0x324E7738,
+      0xBB1185EB, 0x4F7C7B57, 0xCFBFA1C8, 0xC2B3293D);
+#endif // SHUFFLE_STATE
 #endif // ENABLE_SIMD
 
   for(i = 0; i < steps; i ++) {
@@ -98,6 +108,7 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
 
     // ARXBOX layer
 #if ENABLE_SIMD
+#if SHUFFLE_STATE
     // Results in the following:
     // state    = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     // state_j  = [0, 2, 8, 10, 4, 6, 12, 14]
@@ -106,6 +117,12 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
         _mm256_setr_epi32(0, 2, 8, 10, 4, 6, 12, 14), sizeof(uint32_t));
     __m256i state_j1 = _mm256_i32gather_epi32(state,
         _mm256_setr_epi32(1, 3, 9, 11, 5, 7, 13, 15), sizeof(uint32_t));
+#else
+    __m256i state_j = _mm256_i32gather_epi32(state,
+        _mm256_setr_epi32(0, 2, 4, 6, 8, 10, 12, 14), sizeof(uint32_t));
+    __m256i state_j1 = _mm256_i32gather_epi32(state,
+        _mm256_setr_epi32(1, 3, 5, 7, 9, 11, 13, 15), sizeof(uint32_t));
+#endif // SHUFFLE_STATE
 
     // Equivalent to:
     // state[j] += ROT(state[j + 1], 31);
@@ -146,8 +163,18 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
     // A different length is required for the second memcpy, and depends on `brans`.
     // e.g. for Sparkle384, brans = 6. Therefore there are 12 32-bit elements. The first
     // memcpy operation copies the first 8, so the latter must copy (2 * 6) - 8 = 4 elements.
+#if SHUFFLE_STATE
     __m256i state_lo = _mm256_unpacklo_epi32(state_j, state_j1);
     __m256i state_hi = _mm256_unpackhi_epi32(state_j, state_j1);
+#else
+    __m256i state_j_perm = _mm256_permute4x64_epi64(state_j, 0b11011000);
+    __m256i state_j1_perm = _mm256_permute4x64_epi64(state_j1, 0b11011000);
+
+    __m256i state_lo = _mm256_unpacklo_epi32(state_j_perm, state_j1_perm);
+    __m256i state_hi = _mm256_unpackhi_epi32(state_j_perm, state_j1_perm);
+#endif // SHUFFLE_STATE
+
+    // TODO: Is a SIMD store instruction here faster than double memcpy?
     uint32_t* lo_ptr = (uint32_t*)&state_lo;
     uint32_t* hi_ptr = (uint32_t*)&state_hi;
     memcpy(state, lo_ptr, 8 * sizeof(uint32_t));
