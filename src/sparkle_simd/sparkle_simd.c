@@ -22,16 +22,19 @@
 #include <stdio.h>
 #include "sparkle_simd.h"
 
-#define ENABLE_SIMD 1
+#include "platform_defines.h"
+#include <string.h>
+
 // Test if gathering elements with a set stride (e.g. 0, 2, 4, 6...) is any faster
 // than gathering elements 'at random'. Timing suggests it's actually slower due to
 // needing additional permute instructions to store, but look into this more!
 #define SHUFFLE_STATE 1 
 
-#if ENABLE_SIMD
+#if USE_AVX2
 #include <immintrin.h>
-#endif // ENABLE_SIMD
-
+#elif USE_NEON
+#include <arm_neon.h>
+#endif
 
 #define ROT(x, n) (((x) >> (n)) | ((x) << (32-(n))))
 #define ELL(x) (ROT(((x) ^ ((x) << 16)), 16))
@@ -43,7 +46,15 @@ static const uint32_t RCON[MAX_BRANCHES] = {      \
   0xBB1185EB, 0x4F7C7B57, 0xCFBFA1C8, 0xC2B3293D  \
 };
 
-#if ENABLE_SIMD
+#if USE_NEON
+// 128-bit registers, so split into 2.
+static const uint32x4x2_t round_constants = {{
+  { 0xB7E15162, 0xBF715880, 0x38B4DA56, 0x324E7738 },
+  { 0xBB1185EB, 0x4F7C7B57, 0xCFBFA1C8, 0xC2B3293D }
+}};
+#endif
+
+#if USE_AVX2
 // Equivalent to ROT.
 // For each value in `in`: Bitwise or of shift right by count, shift left by 32 - count.
 __inline __m256i rot_simd(__m256i in, int count) {
@@ -80,14 +91,28 @@ void print_state(uint32_t* in, unsigned int in_len,char* label) {
     }
     printf(" ]\n");
 }
-#endif // ENABLE_SIMD
+#elif USE_NEON
+__inline uint32x4_t rot_simd(uint32x4_t in, int count) {
+  return vorrq_u32(
+    vshrq_n_u32(in, count),
+    vshlq_n_u32(in, 32 - count));
+}
+
+__inline uint32x4_t rot_add_simd(uint32x4_t left, uint32x4_t right, int count) {
+  return vaddq_u32(left, rot_simd(right, count));
+}
+
+__inline uint32x4_t rot_xor_simd(uint32x4_t left, uint32x4_t right, int count) {
+  return veorq_u32(left, rot_simd(right, count));
+}
+#endif
 
 void sparkle_simd(uint32_t *state, int brans, int steps)
 {
   int i, j;  // Step and branch counter
   uint32_t rc, tmpx, tmpy, x0, y0;
 
-#if ENABLE_SIMD
+#if USE_AVX2
 #if SHUFFLE_STATE
   // RCON, but rearranged to match the order of pairs after loading them
   // into the vector registers.
@@ -99,7 +124,9 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
       0xB7E15162, 0xBF715880, 0x38B4DA56, 0x324E7738,
       0xBB1185EB, 0x4F7C7B57, 0xCFBFA1C8, 0xC2B3293D);
 #endif // SHUFFLE_STATE
-#endif // ENABLE_SIMD
+#elif USE_NEON
+
+#endif
 
   for(i = 0; i < steps; i ++) {
     // Add round constant
@@ -107,7 +134,7 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
     state[3] ^= i;
 
     // ARXBOX layer
-#if ENABLE_SIMD
+#if USE_AVX2
 #if SHUFFLE_STATE
     // Results in the following:
     // state    = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
@@ -179,6 +206,40 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
     uint32_t* hi_ptr = (uint32_t*)&state_hi;
     memcpy(state, lo_ptr, 8 * sizeof(uint32_t));
     memcpy(state + 8, hi_ptr, ((2 * brans) - 8) * sizeof(uint32_t));
+#elif USE_NEON
+    // This has to be done twice. Once for the lower 8 elements of the state,
+    // and once for the upper 8 elements.
+    for (unsigned int half = 0; half < 2; half++) {
+      if (brans == 4 && half) break; // Only 8 elements, so 1 iteration is enough.
+
+      uint32x4x2_t state_simd = vld2q_u32(state + (half * 8));
+
+      state_simd.val[0] = rot_add_simd(state_simd.val[0], state_simd.val[1], 31);
+      state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 24);
+      state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[half]);
+      
+      state_simd.val[0] = rot_add_simd(state_simd.val[0], state_simd.val[1], 17);
+      state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 17);
+      state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[half]);
+      
+      state_simd.val[0] = vaddq_u32(state_simd.val[0], state_simd.val[1]);
+      state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 31);
+      state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[half]);
+
+      state_simd.val[0] = rot_add_simd(state_simd.val[0], state_simd.val[1], 24);
+      state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 16);
+      state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[half]);
+
+      uint32x4x2_t state_zip = vzipq_u32(state_simd.val[0], state_simd.val[1]);
+
+      if (brans == 8) {
+        memcpy(state + (half * 8), &state_zip, 32);
+      } else if (brans == 6) {
+        memcpy(state + (half * 8), &state_zip, half ? 16 : 32);
+      } else if (brans == 4) {
+        memcpy(state, &state_zip, 32);
+      }
+    }
 #else
     for (j = 0; j < 2 * brans; j += 2) {
         rc = RCON[j >> 1];
@@ -195,7 +256,7 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
         state[j + 1] ^= ROT(state[j], 16);
         state[j] ^= rc;
     }
-#endif // ENABLE_SIMD
+#endif
     // Linear layer
     tmpx = x0 = state[0];
     tmpy = y0 = state[1];

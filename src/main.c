@@ -1,12 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 
 #if defined(_WIN32)
 #include <Windows.h>
 #endif // defined(_WIN32)
 
 #include <inttypes.h>
+#include <string.h>
+#include <sys/time.h>
 
 #include "esch256_ref/api.h"
 #include "esch256_simd/api.h"
@@ -43,7 +44,7 @@ struct timer {
     LARGE_INTEGER start;
     LARGE_INTEGER frequency;
 #else
-    struct timespec start;
+    struct timeval start;
 #endif
 };
 
@@ -52,7 +53,7 @@ void start_timer(struct timer* t) {
     QueryPerformanceFrequency(&(t->frequency));
     QueryPerformanceCounter(&(t->start));
 #else
-    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &(t->start));
+    gettimeofday(&(t->start), NULL);
 #endif
 }
 
@@ -66,16 +67,15 @@ uint64_t end_timer(struct timer* t) {
     elapsed_microseconds.QuadPart /= t->frequency.QuadPart;
     return elapsed_microseconds.QuadPart;
 #else
-    struct timespec end;
-    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);
-    uint64_t elapsed_microseconds = (end.tv_sec - t->start.tv_sec) * 1000000;
-    elapsed_microseconds += (end.tv_nsec - t->start.tv_nsec) / 1000;
+    struct timeval end;
+    gettimeofday(&end, NULL);
+    uint64_t elapsed_microseconds = ((end.tv_sec - t->start.tv_sec) * 1000000) + (end.tv_usec - t->start.tv_usec);
     return elapsed_microseconds;
 #endif
 }
 
 void print_uchar_arr(const UChar* arr, ULLInt length) {
-    for (int i = 0; i < length; i++) {
+    for (unsigned int i = 0; i < length; i++) {
         printf("%02X", arr[i]);
     }
 }
@@ -101,22 +101,22 @@ void time_schwaemm(
         const UChar* k)
 ) {
     UChar* plaintext = malloc(input_len * sizeof(UChar));
-    for (int i = 0; i < input_len; i++) {
+    for (unsigned int i = 0; i < input_len; i++) {
         plaintext[i] = (UChar)i;
     }
 
     UChar* key = malloc(key_len * sizeof(UChar));
-    for (int i = 0; i < key_len; i++) {
+    for (unsigned int i = 0; i < key_len; i++) {
         key[i] = (UChar)i;
     }
 
     UChar* nonce = malloc(nonce_len * sizeof(UChar));
-    for (int i = 0; i < nonce_len; i++) {
+    for (unsigned int i = 0; i < nonce_len; i++) {
         nonce[i] = (UChar)i;
     }
 
     UChar* associated_data = malloc(ad_len * sizeof(UChar));
-    for (int i = 0; i < ad_len; i++) {
+    for (unsigned int i = 0; i < ad_len; i++) {
         associated_data[i] = (UChar)i;
     }
 
@@ -181,7 +181,7 @@ void time_schwaemm(
     start_timer(&t);
 
     for (unsigned int i = 0; i < num_runs; i++) {
-        ref_dec_function(simd_dec_results[i], &ciphertext_len, NULL, simd_enc_results[i], output_len,
+        simd_dec_function(simd_dec_results[i], &ciphertext_len, NULL, simd_enc_results[i], output_len,
             associated_data, ad_len, nonce, key);
     }
 
@@ -252,23 +252,23 @@ int verify_schwaemm(
 
     UChar plaintext[SCHWAEMM_MAX_MESSAGE_LENGTH];
     UChar decryption_scratch[SCHWAEMM_MAX_MESSAGE_LENGTH];
-    for (int i = 0; i < SCHWAEMM_MAX_MESSAGE_LENGTH; i++) {
+    for (unsigned int i = 0; i < SCHWAEMM_MAX_MESSAGE_LENGTH; i++) {
         plaintext[i] = (UChar)i;
         decryption_scratch[i] = (UChar)0;
     }
 
     UChar* key = malloc(key_len * sizeof(UChar));
-    for (int i = 0; i < key_len; i++) {
+    for (unsigned int i = 0; i < key_len; i++) {
         key[i] = (UChar)i;
     }
 
     UChar* nonce = malloc(nonce_len * sizeof(UChar));
-    for (int i = 0; i < nonce_len; i++) {
+    for (unsigned int i = 0; i < nonce_len; i++) {
         nonce[i] = (UChar)i;
     }
 
     UChar associated_data[MAX_ASSOCIATED_DATA_LENGTH];
-    for (int i = 0; i < MAX_ASSOCIATED_DATA_LENGTH; i++) {
+    for (unsigned int i = 0; i < MAX_ASSOCIATED_DATA_LENGTH; i++) {
         associated_data[i] = (UChar)i;
     }
 
@@ -356,7 +356,7 @@ int time_esch(
     long long* simd_timings
 ) {
     UChar* plaintext = malloc(input_len * sizeof(UChar));
-    for (int i = 0; i < input_len; i++) {
+    for (unsigned int i = 0; i < input_len; i++) {
         plaintext[i] = (UChar)i;
     }
 

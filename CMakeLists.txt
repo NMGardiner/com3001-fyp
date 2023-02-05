@@ -1,6 +1,24 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(com3001-fyp C)
 
+#
+# Compile options must come before add_executable()!!!
+#
+
+add_compile_options(
+	#-std=c99
+	-Wall
+	-Wextra
+	-Wshadow
+	#-fsanitize=address,undefined
+)
+
+IF (WIN32)
+add_compile_options(-mavx2)
+ELSE()
+add_compile_options(-mfpu=neon)
+ENDIF()
+
 add_executable(testbench
 	# Testbench
 	"src/main.c"
@@ -51,8 +69,4 @@ add_executable(testbench
 target_include_directories(testbench PRIVATE
 	# Require specifying directory to avoid ref/SIMD mixups.
 	"src/"
-)
-
-add_compile_options(
-	-std=c99 -Wall -Wextra -Wshadow -fsanitize=address,undefined -mavx2
 )
