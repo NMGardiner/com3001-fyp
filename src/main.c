@@ -134,7 +134,11 @@ double calculate_average(double* arr, unsigned int in_len) {
             result += arr[i];
         }
     }
-    printf("(Avg discarded %d results)\n", discard_count);
+
+    if (discard_count > 0) {
+        printf("(%d result(s) discarded)\n", discard_count);
+    }
+
     return result / (double)(in_len - discard_count);
 }
 
@@ -601,13 +605,17 @@ int main(void)
         e384simd_crypto_hash
     };
 
-    time_schwaemm(NUM_RESULTS, 1 << 16, 1 << 12, &s128128);
-    time_schwaemm(NUM_RESULTS, 1 << 16, 1 << 12, &s192192);
-    time_schwaemm(NUM_RESULTS, 1 << 16, 1 << 12, &s256128);
-    time_schwaemm(NUM_RESULTS, 1 << 16, 1 << 12, &s256256);
+    ULLInt encryption_input_len = 1 << 16;
+    ULLInt encryption_ad_len = 1 << 12;
+    ULLInt hash_input_len = 1 << 16;
 
-    time_esch(NUM_RESULTS, 1 << 16, &e256);
-    time_esch(NUM_RESULTS, 1 << 16, &e384);
+    time_schwaemm(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s128128);
+    time_schwaemm(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s192192);
+    time_schwaemm(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256128);
+    time_schwaemm(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256256);
+
+    time_esch(NUM_RESULTS, hash_input_len, &e256);
+    time_esch(NUM_RESULTS, hash_input_len, &e384);
 
     return 1;
 }

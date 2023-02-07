@@ -105,6 +105,30 @@ __inline uint32x4_t rot_add_simd(uint32x4_t left, uint32x4_t right, int count) {
 __inline uint32x4_t rot_xor_simd(uint32x4_t left, uint32x4_t right, int count) {
   return veorq_u32(left, rot_simd(right, count));
 }
+
+// Process 4 'pairs' of the state using NEON instructions, and memcpy back.
+__inline static void alzette_simd(uint32_t* state, unsigned int rc) {
+  uint32x4x2_t state_simd = vld2q_u32(state);
+
+  state_simd.val[0] = rot_add_simd(state_simd.val[0], state_simd.val[1], 31);
+  state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 24);
+  state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[rc]);
+  
+  state_simd.val[0] = rot_add_simd(state_simd.val[0], state_simd.val[1], 17);
+  state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 17);
+  state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[rc]);
+  
+  state_simd.val[0] = vaddq_u32(state_simd.val[0], state_simd.val[1]);
+  state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 31);
+  state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[rc]);
+
+  state_simd.val[0] = rot_add_simd(state_simd.val[0], state_simd.val[1], 24);
+  state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 16);
+  state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[rc]);
+
+  uint32x4x2_t state_zip = vzipq_u32(state_simd.val[0], state_simd.val[1]);
+  memcpy(state, &state_zip, 32);
+}
 #endif
 
 void sparkle_simd(uint32_t *state, int brans, int steps)
@@ -212,38 +236,43 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
         memcpy(state + 8, hi_ptr, 16);
     }
 #elif USE_NEON
-    // This has to be done twice. Once for the lower 8 elements of the state,
-    // and once for the upper 8 elements.
-    for (unsigned int half = 0; half < 2; half++) {
-      if (brans == 4 && half) break; // Only 8 elements, so 1 iteration is enough.
+    // Process the first 4 pairs of the state.
+    alzette_simd(state, 0);
 
-      uint32x4x2_t state_simd = vld2q_u32(state + (half * 8));
+    if (brans == 8) {
+      // If there's 4 more pairs to process, then do so.
+      alzette_simd(state + 8, 1);
+    } else if (brans == 6) {
+        // Running alzette_simd with only 2 pairs is inefficient, so it's
+        // faster to just handle the remaining 2 pairs like this.
 
-      state_simd.val[0] = rot_add_simd(state_simd.val[0], state_simd.val[1], 31);
-      state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 24);
-      state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[half]);
-      
-      state_simd.val[0] = rot_add_simd(state_simd.val[0], state_simd.val[1], 17);
-      state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 17);
-      state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[half]);
-      
-      state_simd.val[0] = vaddq_u32(state_simd.val[0], state_simd.val[1]);
-      state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 31);
-      state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[half]);
+        rc = RCON[8 >> 1];
+        state[8] += ROT(state[9], 31);
+        state[9] ^= ROT(state[8], 24);
+        state[8] ^= rc;
+        state[8] += ROT(state[9], 17);
+        state[9] ^= ROT(state[8], 17);
+        state[8] ^= rc;
+        state[8] += state[9];
+        state[9] ^= ROT(state[8], 31);
+        state[8] ^= rc;
+        state[8] += ROT(state[9], 24);
+        state[9] ^= ROT(state[8], 16);
+        state[8] ^= rc;
 
-      state_simd.val[0] = rot_add_simd(state_simd.val[0], state_simd.val[1], 24);
-      state_simd.val[1] = rot_xor_simd(state_simd.val[1], state_simd.val[0], 16);
-      state_simd.val[0] = veorq_u32(state_simd.val[0], round_constants.val[half]);
-
-      uint32x4x2_t state_zip = vzipq_u32(state_simd.val[0], state_simd.val[1]);
-
-      if (brans == 8) {
-        memcpy(state + (half * 8), &state_zip, 32);
-      } else if (brans == 6) {
-        memcpy(state + (half * 8), &state_zip, half ? 16 : 32);
-      } else if (brans == 4) {
-        memcpy(state, &state_zip, 32);
-      }
+        rc = RCON[10 >> 1];
+        state[10] += ROT(state[11], 31);
+        state[11] ^= ROT(state[10], 24);
+        state[10] ^= rc;
+        state[10] += ROT(state[11], 17);
+        state[11] ^= ROT(state[10], 17);
+        state[10] ^= rc;
+        state[10] += state[11];
+        state[11] ^= ROT(state[10], 31);
+        state[10] ^= rc;
+        state[10] += ROT(state[11], 24);
+        state[11] ^= ROT(state[10], 16);
+        state[10] ^= rc;
     }
 #else
     for (j = 0; j < 2 * brans; j += 2) {
