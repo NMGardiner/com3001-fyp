@@ -204,8 +204,13 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
     // TODO: Is a SIMD store instruction here faster than double memcpy?
     uint32_t* lo_ptr = (uint32_t*)&state_lo;
     uint32_t* hi_ptr = (uint32_t*)&state_hi;
-    memcpy(state, lo_ptr, 8 * sizeof(uint32_t));
-    memcpy(state + 8, hi_ptr, ((2 * brans) - 8) * sizeof(uint32_t));
+    memcpy(state, lo_ptr, 32);
+
+    if (brans == 8) {
+        memcpy(state + 8, hi_ptr, 32);
+    } else if (brans == 6) {
+        memcpy(state + 8, hi_ptr, 16);
+    }
 #elif USE_NEON
     // This has to be done twice. Once for the lower 8 elements of the state,
     // and once for the upper 8 elements.

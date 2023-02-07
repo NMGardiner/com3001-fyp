@@ -8,15 +8,18 @@ project(com3001-fyp C)
 add_compile_options(
 	#-std=c99
 	-Wall
-	-Wextra
-	-Wshadow
 	#-fsanitize=address,undefined
 )
 
 IF (WIN32)
-add_compile_options(-mavx2)
+# -mavx2 equivalent for MSVC.
+# Left out for now, since enabling it seems to make the optimised code run slower?
+# AVX2 instructions like vpunpckldq are still in the disassembly whether the flag is
+# added or not, so I can't figure out what's changing.
+#add_compile_options(/arch:AVX2)
 ELSE()
-add_compile_options(-mfpu=neon)
+# MSVC doesn't like these flags.
+add_compile_options(-Wextra -Wshadow -mfpu=neon)
 ENDIF()
 
 add_executable(testbench

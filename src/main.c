@@ -3,11 +3,12 @@
 
 #if defined(_WIN32)
 #include <Windows.h>
+#else
+#include <sys/time.h>
 #endif // defined(_WIN32)
 
 #include <inttypes.h>
 #include <string.h>
-#include <sys/time.h>
 
 #include "esch256_ref/api.h"
 #include "esch256_simd/api.h"
@@ -540,7 +541,7 @@ void time_esch(unsigned int num_runs, ULLInt input_len, struct esch_variant* var
     free(simd_timings);
 }
 
-int main()
+int main(void)
 {
     struct schwaemm_variant s128128 = {
         "Schwaemm128_128",
