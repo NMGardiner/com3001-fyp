@@ -18,8 +18,8 @@
 // see <http://www.gnu.org/licenses/>.                                       //
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifndef SPARKLE_OPT_H
-#define SPARKLE_OPT_H
+#ifndef SPARKLE_OPT_SIMD_H
+#define SPARKLE_OPT_SIMD_H
 
 #if defined(_MSC_VER) && !defined(__clang__) && !defined(__ICL)
 typedef unsigned __int8 uint8_t;
@@ -37,4 +37,4 @@ void clear_state_simd(uint32_t *state, int brans);
 void print_state_simd(const uint32_t *state, int brans);
 void test_sparkle_simd(int brans, int steps);
 
-#endif  // SPARKLE_OPT_H
+#endif  // SPARKLE_OPT_SIMD_H
