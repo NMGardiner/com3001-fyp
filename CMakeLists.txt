@@ -32,6 +32,9 @@ add_executable(testbench
 	# Sparkle SIMD-optimised algorithm
 	"src/sparkle_simd/sparkle_simd.c"
 
+	# AVX Alzette implementations
+	"src/sparkle_simd/alzette_avx_impls.h"
+
 	# Esch256 reference algorithm
 	"src/esch256_ref/hash.c"
 
