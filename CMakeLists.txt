@@ -48,7 +48,7 @@ add_executable(testbench
 	"src/esch384_simd/hash.c"
 
 	# Schwaemm128_128 reference algorithm
-	"src/schwaemm128128_ref/encrypt.c"	
+	"src/schwaemm128128_ref/encrypt.c"
 
 	# Schwaemm128_128 SIMD-optimised algorithm
 	"src/schwaemm128128_simd/encrypt.c"
@@ -70,6 +70,14 @@ add_executable(testbench
 
 	# Schwaemm256_256 SIMD-optimised algorithm
 	"src/schwaemm256256_simd/encrypt.c"
+
+	# Pyjamask128 reference algorithm
+	"src/pyjamask128_ref/encrypt.c"
+	"src/pyjamask128_ref/pyjamask.c"
+
+	# Pyjamask128 SIMD-optimised algorithm
+	"src/pyjamask128_simd/encrypt.c"
+	"src/pyjamask128_simd/pyjamask.c"
 )
 
 target_include_directories(testbench PRIVATE

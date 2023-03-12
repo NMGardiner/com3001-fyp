@@ -9,6 +9,7 @@
 
 #include <inttypes.h>
 #include <string.h>
+#include <math.h>
 
 #include "esch256_ref/api.h"
 #include "esch256_simd/api.h"
@@ -28,9 +29,14 @@
 #include "schwaemm256256_ref/api.h"
 #include "schwaemm256256_simd/api.h"
 
+#include "pyjamask128_ref/api.h"
+#include "pyjamask128_simd/api.h"
+
 #define ESCH_MAX_MESSAGE_LENGTH 1024
-#define SCHWAEMM_MAX_MESSAGE_LENGTH 32
-#define MAX_ASSOCIATED_DATA_LENGTH 32
+
+#define AEAD_VAL_MESSAGE_LEN 32
+#define AEAD_VAL_AD_LEN 32
+
 typedef unsigned char UChar;
 typedef unsigned long long int ULLInt;
 
@@ -75,7 +81,7 @@ uint64_t end_timer(struct timer* t) {
 #endif
 }
 
-struct schwaemm_variant {
+struct aead_variant {
     const char* name;
     ULLInt key_len;
     ULLInt ad_crypt_len;
@@ -125,31 +131,45 @@ void print_double_array(double *arr, unsigned int in_len, const char* label) {
 
 double calculate_average(double* arr, unsigned int in_len) {
     double result = 0.0f;
-    unsigned int discard_count = 0;
     for (unsigned int i = 0; i < in_len; i++) {
-        // Ignore results greater than 50%, as they are almost definitely outliers.
-        if (arr[i] >= 50.0f || arr[i] <= -50.0f) {
-            discard_count++;
-        } else {
-            result += arr[i];
+        result += arr[i];
+    }
+
+    return result / (double)in_len;
+}
+
+// Returns the length of the cleaned dataset.
+unsigned int clean_data(double* arr, unsigned int in_len, double mean, double* out) {
+    // Calculate standard deviation.
+    double sum = 0.0f;
+    for (unsigned int i = 0; i < in_len; i++) {
+        sum += pow((arr[i] - mean), 2);
+    }
+
+    double sd = sqrt(sum / (double)in_len);
+
+    unsigned int new_len = 0;
+    for (unsigned int i = 0; i < in_len; i++) {
+        double z_score = (arr[i] - mean) / sd;
+
+        // Only keep results within 2 standard deviations of the mean.
+        if (fabs(z_score) <= 2.0f) {
+            out[new_len] = arr[i];
+            new_len++;
         }
     }
 
-    if (discard_count > 0) {
-        printf("(%d result(s) discarded)\n", discard_count);
-    }
-
-    return result / (double)(in_len - discard_count);
+    return new_len;
 }
 
-int verify_schwaemm(int debug, struct schwaemm_variant* variant) {
+int verify_aead(int debug, struct aead_variant* variant) {
     int validation_result = 1;
 
-    ULLInt output_len = SCHWAEMM_MAX_MESSAGE_LENGTH + variant->ad_crypt_len;
+    ULLInt output_len = AEAD_VAL_MESSAGE_LEN + variant->ad_crypt_len;
 
-    UChar plaintext[SCHWAEMM_MAX_MESSAGE_LENGTH];
-    UChar decryption_scratch[SCHWAEMM_MAX_MESSAGE_LENGTH];
-    for (unsigned int i = 0; i < SCHWAEMM_MAX_MESSAGE_LENGTH; i++) {
+    UChar plaintext[AEAD_VAL_MESSAGE_LEN];
+    UChar decryption_scratch[AEAD_VAL_MESSAGE_LEN];
+    for (unsigned int i = 0; i < AEAD_VAL_MESSAGE_LEN; i++) {
         plaintext[i] = (UChar)i;
         decryption_scratch[i] = (UChar)0;
     }
@@ -164,19 +184,19 @@ int verify_schwaemm(int debug, struct schwaemm_variant* variant) {
         nonce[i] = (UChar)i;
     }
 
-    UChar associated_data[MAX_ASSOCIATED_DATA_LENGTH];
-    for (unsigned int i = 0; i < MAX_ASSOCIATED_DATA_LENGTH; i++) {
+    UChar associated_data[AEAD_VAL_AD_LEN];
+    for (unsigned int i = 0; i < AEAD_VAL_AD_LEN; i++) {
         associated_data[i] = (UChar)i;
     }
 
-    const unsigned int results_count = (SCHWAEMM_MAX_MESSAGE_LENGTH + 1) * (MAX_ASSOCIATED_DATA_LENGTH + 1);
+    const unsigned int results_count = (AEAD_VAL_MESSAGE_LEN + 1) * (AEAD_VAL_AD_LEN + 1);
 
     UChar** ref_results = malloc(results_count * sizeof(UChar*));
     UChar** simd_results = malloc(results_count * sizeof(UChar*));
 
-    for (ULLInt plaintext_len = 0; plaintext_len <= SCHWAEMM_MAX_MESSAGE_LENGTH; plaintext_len++) {
-        for (ULLInt ad_len = 0; ad_len <= MAX_ASSOCIATED_DATA_LENGTH; ad_len++) {
-            const int index = (plaintext_len * (MAX_ASSOCIATED_DATA_LENGTH + 1)) + ad_len;
+    for (ULLInt plaintext_len = 0; plaintext_len <= AEAD_VAL_MESSAGE_LEN; plaintext_len++) {
+        for (ULLInt ad_len = 0; ad_len <= AEAD_VAL_AD_LEN; ad_len++) {
+            const int index = (plaintext_len * (AEAD_VAL_AD_LEN + 1)) + ad_len;
             ULLInt ciphertext_len = 0;
             ULLInt decrypted_ciphertext_len = 0;
             
@@ -232,7 +252,7 @@ int verify_schwaemm(int debug, struct schwaemm_variant* variant) {
     free(key);
     free(nonce);
 
-    for (int i = 0; i < SCHWAEMM_MAX_MESSAGE_LENGTH + 1; i++) {
+    for (int i = 0; i < AEAD_VAL_MESSAGE_LEN + 1; i++) {
         free(ref_results[i]);
         free(simd_results[i]);
     }
@@ -243,7 +263,7 @@ int verify_schwaemm(int debug, struct schwaemm_variant* variant) {
     return validation_result;
 }
 
-void time_schwaemm(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struct schwaemm_variant* variant) {
+void time_aead(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struct aead_variant* variant) {
     ULLInt output_len = input_len + variant->ad_crypt_len;
 
     UChar* plaintext = malloc(input_len * sizeof(UChar));
@@ -348,7 +368,7 @@ void time_schwaemm(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struc
         }
     }
 
-    int does_validation_pass = verify_schwaemm(0, variant);
+    int does_validation_pass = verify_aead(0, variant);
 
     printf("\n%s:\n", variant->name);
     if (do_results_match) {
@@ -361,7 +381,11 @@ void time_schwaemm(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struc
             diffs[i] = ((double)diff / ref_enc_timings[i]) * 100.0f;
         }
         print_double_array(diffs, NUM_RESULTS, "%diff");
-        printf("Avg = %.2f%%\n", calculate_average(diffs, NUM_RESULTS));
+        double cleaned_data[NUM_RESULTS];
+        unsigned int cleaned_data_len = clean_data(diffs, NUM_RESULTS,
+            calculate_average(diffs, NUM_RESULTS), cleaned_data);
+        printf("Avg = %.2f%% (%d removed)\n",
+            calculate_average(cleaned_data, cleaned_data_len), NUM_RESULTS - cleaned_data_len);
 
         print_results_array(ref_dec_timings, NUM_RESULTS, "ref_d");
         print_results_array(simd_dec_timings, NUM_RESULTS, "opt_d");
@@ -371,7 +395,10 @@ void time_schwaemm(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struc
             diffs[i] = ((double)diff / ref_dec_timings[i]) * 100.0f;
         }
         print_double_array(diffs, NUM_RESULTS, "%diff");
-        printf("Avg = %.2f%%\n", calculate_average(diffs, NUM_RESULTS));
+        cleaned_data_len = clean_data(diffs, NUM_RESULTS,
+            calculate_average(diffs, NUM_RESULTS), cleaned_data);
+        printf("Avg = %.2f%% (%d removed)\n",
+            calculate_average(cleaned_data, cleaned_data_len), NUM_RESULTS - cleaned_data_len);
     } else {
         printf("[ERROR] %s timing yielded incorrect results!\n", variant->name);
     }
@@ -520,7 +547,11 @@ void time_esch(unsigned int num_runs, ULLInt input_len, struct esch_variant* var
             diffs[i] = ((double)diff / ref_timings[i]) * 100.0f;
         }
         print_double_array(diffs, NUM_RESULTS, "%diff");
-        printf("Avg = %.2f%%\n", calculate_average(diffs, NUM_RESULTS));
+        double cleaned_data[NUM_RESULTS];
+        unsigned int cleaned_data_len = clean_data(diffs, NUM_RESULTS,
+            calculate_average(diffs, NUM_RESULTS), cleaned_data);
+        printf("Avg = %.2f%% (%d removed)\n",
+            calculate_average(cleaned_data, cleaned_data_len), NUM_RESULTS - cleaned_data_len);
     } else {
         printf("[ERROR] %s timing yielded incorrect results!\n", variant->name);
     }
@@ -547,7 +578,7 @@ void time_esch(unsigned int num_runs, ULLInt input_len, struct esch_variant* var
 
 int main(void)
 {
-    struct schwaemm_variant s128128 = {
+    struct aead_variant s128128 = {
         "Schwaemm128_128",
         S128128REF_CRYPTO_KEYBYTES,
         S128128REF_CRYPTO_ABYTES,
@@ -558,7 +589,7 @@ int main(void)
         s128128simd_crypto_aead_decrypt
     };
 
-    struct schwaemm_variant s192192 = {
+    struct aead_variant s192192 = {
         "Schwaemm192_192",
         S192192REF_CRYPTO_KEYBYTES,
         S192192REF_CRYPTO_ABYTES,
@@ -569,7 +600,7 @@ int main(void)
         s192192simd_crypto_aead_decrypt
     };
 
-    struct schwaemm_variant s256128 = {
+    struct aead_variant s256128 = {
         "Schwaemm256_128",
         S256128REF_CRYPTO_KEYBYTES,
         S256128REF_CRYPTO_ABYTES,
@@ -580,7 +611,7 @@ int main(void)
         s256128simd_crypto_aead_decrypt
     };
 
-    struct schwaemm_variant s256256 = {
+    struct aead_variant s256256 = {
         "Schwaemm256_256",
         S256256REF_CRYPTO_KEYBYTES,
         S256256REF_CRYPTO_ABYTES,
@@ -609,13 +640,26 @@ int main(void)
     ULLInt encryption_ad_len = 1 << 12;
     ULLInt hash_input_len = 1 << 16;
 
-    time_schwaemm(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s128128);
-    time_schwaemm(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s192192);
-    time_schwaemm(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256128);
-    time_schwaemm(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256256);
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s128128);
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s192192);
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256128);
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256256);
 
     time_esch(NUM_RESULTS, hash_input_len, &e256);
     time_esch(NUM_RESULTS, hash_input_len, &e384);
+
+    struct aead_variant pj128 = {
+        "Pyjamask128",
+        PJ128REF_CRYPTO_KEYBYTES,
+        PJ128REF_CRYPTO_ABYTES,
+        PJ128REF_CRYPTO_NPUBBYTES,
+        pj128ref_crypto_aead_encrypt,
+        pj128ref_crypto_aead_decrypt,
+        pj128simd_crypto_aead_encrypt,
+        pj128simd_crypto_aead_decrypt
+    };
+
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &pj128);
 
     return 1;
 }
