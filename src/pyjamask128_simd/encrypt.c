@@ -197,7 +197,7 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
 
 #if USE_AVX2
     // Process groups of 8 128-bit blocks first.
-    for (i = 1; i <= inbytes / (16 * 8); i += 8, in += (16 * 8), out += (16 * 8)) {
+    for (i = 1; i + 7 <= (inbytes / 16); i += 8, in += (16 * 8), out += (16 * 8)) {
         block tmp_x8[8];
         block offset_x8[8];
 
