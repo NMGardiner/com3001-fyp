@@ -1,4 +1,7 @@
 #include <immintrin.h>
+#include <stdio.h>
+#include <string.h>
+#include "sparkle_simd.h"
 
 #if 1 // Folding
 #define ROT(x, n) (((x) >> (n)) | ((x) << (32-(n))))
@@ -15,9 +18,9 @@ static const uint32_t rc_256_shuffled_vals[8] = {
     0x38B4DA56, 0x324E7738, 0xCFBFA1C8, 0xC2B3293D
 };
 
-static const __m128i* rc_128 = &RCON;
-static const __m256i* rc_256 = &RCON;
-static const __m256i* rc_256_shuffled = &rc_256_shuffled_vals;
+static const __m128i* rc_128 = (__m128i*)&RCON;
+static const __m256i* rc_256 = (__m256i*)&RCON;
+static const __m256i* rc_256_shuffled = (__m256i*)&rc_256_shuffled_vals;
 
 struct state_512 {
     union {
@@ -37,10 +40,10 @@ struct state_256 {
 #if 1 // Folding
 // Equivalent to ROT.
 // For each value in `in`: Bitwise or of shift right by count, shift left by 32 - count.
-__inline __m256i rot_256(__m256i in, int count) {
+__inline __m256i rot_256(__m256i in, int n) {
     return _mm256_or_si256(
-        _mm256_srli_epi32(in, count),
-        _mm256_slli_epi32(in, 32 - count));
+        _mm256_srli_epi32(in, n),
+        _mm256_slli_epi32(in, 32 - n));
 }
 
 __inline __m128i rot_128(__m128i in, int count) {
@@ -50,21 +53,21 @@ __inline __m128i rot_128(__m128i in, int count) {
 }
 
 // Equivalent to + ROT.
-__inline __m256i rot_add_256(__m256i left, __m256i right, int count) {
-    return _mm256_add_epi32(left, rot_256(right, count));
+__inline __m256i rot_add_256(__m256i left, __m256i right, int n) {
+    return _mm256_add_epi32(left, rot_256(right, n));
 }
 
-__inline __m128i rot_add_128(__m128i left, __m128i right, int count) {
-    return _mm_add_epi32(left, rot_128(right, count));
+__inline __m128i rot_add_128(__m128i left, __m128i right, int n) {
+    return _mm_add_epi32(left, rot_128(right, n));
 }
 
 // Equivalent to ^ ROT
-__inline __m256i rot_xor_256(__m256i left, __m256i right, int count) {
-    return _mm256_xor_si256(left, rot_256(right, count));
+__inline __m256i rot_xor_256(__m256i left, __m256i right, int n) {
+    return _mm256_xor_si256(left, rot_256(right, n));
 }
 
-__inline __m128i rot_xor_128(__m128i left, __m128i right, int count) {
-    return _mm_xor_epi32(left, rot_128(right, count));
+__inline __m128i rot_xor_128(__m128i left, __m128i right, int n) {
+    return _mm_xor_si128(left, rot_128(right, n));
 }
 
 #define ALZETTE_256(state_j, state_j1, rc)          \
@@ -87,19 +90,19 @@ __inline __m128i rot_xor_128(__m128i left, __m128i right, int count) {
 #define ALZETTE_128(state_j, state_j1, rc)              \
     state_j = rot_add_128(state_j, state_j1, 31);       \
     state_j1 = rot_xor_128(state_j1, state_j, 24);      \
-    state_j = _mm_xor_epi32(state_j, rc);               \
+    state_j = _mm_xor_si128(state_j, rc);               \
                                                         \
     state_j = rot_add_128(state_j, state_j1, 17);       \
     state_j1 = rot_xor_128(state_j1, state_j, 17);      \
-    state_j = _mm_xor_epi32(state_j, rc);               \
+    state_j = _mm_xor_si128(state_j, rc);               \
                                                         \
     state_j = _mm_add_epi32(state_j, state_j1);         \
     state_j1 = rot_xor_128(state_j1, state_j, 31);      \
-    state_j = _mm_xor_epi32(state_j, rc);               \
+    state_j = _mm_xor_si128(state_j, rc);               \
                                                         \
     state_j = rot_add_128(state_j, state_j1, 24);       \
     state_j1 = rot_xor_128(state_j1, state_j, 16);      \
-    state_j = _mm_xor_epi32(state_j, rc);
+    state_j = _mm_xor_si128(state_j, rc);
 
 // For debugging.
 void print_state(uint32_t* in, unsigned int in_len, char* label) {
@@ -116,12 +119,26 @@ void print_state(uint32_t* in, unsigned int in_len, char* label) {
 // Permutes to get the right order before unpacking.
 // Double memcpy with dynamic offset.
 __inline void alzette_avx_00(uint32_t* state, int brans) {
-    __m256i state_j = _mm256_i32gather_epi32(state,
+    __m256i state_j = _mm256_i32gather_epi32((int*)state,
         _mm256_setr_epi32(0, 2, 4, 6, 8, 10, 12, 14), sizeof(uint32_t));
-    __m256i state_j1 = _mm256_i32gather_epi32(state,
+    __m256i state_j1 = _mm256_i32gather_epi32((int*)state,
         _mm256_setr_epi32(1, 3, 5, 7, 9, 11, 13, 15), sizeof(uint32_t));
 
-    ALZETTE_256(state_j, state_j1, *rc_256);
+    state_j = rot_add_256(state_j, state_j1, 31);
+    state_j1 = rot_xor_256(state_j1, state_j, 24);
+    state_j = _mm256_xor_si256(state_j, *rc_256);
+
+    state_j = rot_add_256(state_j, state_j1, 17);
+    state_j1 = rot_xor_256(state_j1, state_j, 17);
+    state_j = _mm256_xor_si256(state_j, *rc_256);
+
+    state_j = _mm256_add_epi32(state_j, state_j1);
+    state_j1 = rot_xor_256(state_j1, state_j, 31);
+    state_j = _mm256_xor_si256(state_j, *rc_256);
+
+    state_j = rot_add_256(state_j, state_j1, 24);
+    state_j1 = rot_xor_256(state_j1, state_j, 16);
+    state_j = _mm256_xor_si256(state_j, *rc_256);
 
     state_j = _mm256_permute4x64_epi64(state_j, 0b11011000);
     state_j1 = _mm256_permute4x64_epi64(state_j1, 0b11011000);
