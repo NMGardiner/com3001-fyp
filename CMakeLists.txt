@@ -16,7 +16,7 @@ IF (WIN32)
 # Left out for now, since enabling it seems to make the optimised code run slower?
 # AVX2 instructions like vpunpckldq are still in the disassembly whether the flag is
 # added or not, so I can't figure out what's changing.
-#add_compile_options(/arch:AVX2)
+add_compile_options(/arch:AVX2)
 ELSE()
 # MSVC doesn't like these flags.
 add_compile_options(-Wextra -Wshadow -mfpu=neon)
