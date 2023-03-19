@@ -24,14 +24,18 @@
 
 #include "platform_defines.h"
 
-void pj128simd_pyjamask_96_enc (const unsigned char *plaintext,  const unsigned char *key, unsigned char *ciphertext);
-void pj128simd_pyjamask_96_dec (const unsigned char *ciphertext, const unsigned char *key, unsigned char *plaintext);
+void pjsimd_pyjamask_96_enc (const unsigned char *plaintext,  const unsigned char *key, unsigned char *ciphertext);
+void pjsimd_pyjamask_96_dec (const unsigned char *ciphertext, const unsigned char *key, unsigned char *plaintext);
 
-void pj128simd_pyjamask_128_enc(const unsigned char *plaintext,  const unsigned char *key, unsigned char *ciphertext);
-void pj128simd_pyjamask_128_dec(const unsigned char *ciphertext, const unsigned char *key, unsigned char *plaintext );
+void pjsimd_pyjamask_128_enc(const unsigned char *plaintext,  const unsigned char *key, unsigned char *ciphertext);
+void pjsimd_pyjamask_128_dec(const unsigned char *ciphertext, const unsigned char *key, unsigned char *plaintext );
 
 #if USE_AVX2
+// 8 instances of Pyjamask96 in parallel.
+void pjsimd_pyjamask_96_enc_x8(const unsigned char* plaintext, const unsigned char* key, unsigned char* ciphertext);
+void pjsimd_pyjamask_96_dec_x8(const unsigned char* ciphertext, const unsigned char* key, unsigned char* plaintext);
+
 // 8 instances of Pyjamask128 in parallel.
-void pj128simd_pyjamask_128_enc_x8(const unsigned char* plaintext, const unsigned char* key, unsigned char* ciphertext);
-void pj128simd_pyjamask_128_dec_x8(const unsigned char* ciphertext, const unsigned char* key, unsigned char* plaintext);
+void pjsimd_pyjamask_128_enc_x8(const unsigned char* plaintext, const unsigned char* key, unsigned char* ciphertext);
+void pjsimd_pyjamask_128_dec_x8(const unsigned char* ciphertext, const unsigned char* key, unsigned char* plaintext);
 #endif

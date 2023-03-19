@@ -49,7 +49,7 @@ Date : 25/02/2019
 #define NONCEBYTES PJ128SIMD_CRYPTO_NPUBBYTES
 #define TAGBYTES   PJ128SIMD_CRYPTO_ABYTES
 
-#include "pyjamask128_simd/pyjamask.h"
+#include "pyjamask_simd/pyjamask.h"
 
 #include "platform_defines.h"
 
@@ -98,7 +98,7 @@ static void hash(block result, unsigned char *k,
     /* L_* = ENCIPHER(K, zeros(128)) */
 //    AES_set_encrypt_key(k, KEYBYTES*8, &aes_key);
     memset(tmp, 0, 16);
-    pj128simd_pyjamask_128_enc(tmp, k, lstar);
+    pjsimd_pyjamask_128_enc(tmp, k, lstar);
     /* L_$ = double(L_*) */
     double_block(ldollar, lstar);
 
@@ -114,7 +114,7 @@ static void hash(block result, unsigned char *k,
         xor_block(offset, offset, tmp);
         /* Sum_i = Sum_{i-1} xor ENCIPHER(K, A_i xor Offset_i) */
         xor_block(tmp, offset, a);
-        pj128simd_pyjamask_128_enc(tmp, k, tmp);
+        pjsimd_pyjamask_128_enc(tmp, k, tmp);
         xor_block(sum, sum, tmp);
     }
 
@@ -130,7 +130,7 @@ static void hash(block result, unsigned char *k,
         tmp[abytes] = 0x80;
         xor_block(tmp, offset, tmp);
         /* Sum = Sum_m xor ENCIPHER(K, tmp) */
-        pj128simd_pyjamask_128_enc(tmp, k, tmp);
+        pjsimd_pyjamask_128_enc(tmp, k, tmp);
         xor_block(sum, tmp, sum);
     }
 
@@ -156,7 +156,7 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
 
     /* L_* = ENCIPHER(K, zeros(128)) */
     memset(tmp, 0, 16);
-    pj128simd_pyjamask_128_enc(tmp, k, lstar);
+    pjsimd_pyjamask_128_enc(tmp, k, lstar);
     /* L_$ = double(L_*) */
     double_block(ldollar, lstar);
 
@@ -171,7 +171,7 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
     bottom = nonce[15] & 0x3F;
     /* Ktop = ENCIPHER(K, Nonce[1..122] || zeros(6)) */
     nonce[15] &= 0xC0;
-    pj128simd_pyjamask_128_enc(nonce, k, ktop);
+    pjsimd_pyjamask_128_enc(nonce, k, ktop);
     /* Stretch = Ktop || (Ktop[1..64] xor Ktop[9..72]) */
     memcpy(stretch, ktop, 16);
     memcpy(tmp, &ktop[1], 8);
@@ -221,9 +221,9 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
 
         // Run 8 instances of the block cipher in parallel.
         if (encrypting) {
-            pj128simd_pyjamask_128_enc_x8(tmp_x8, k, tmp_x8);
+            pjsimd_pyjamask_128_enc_x8(tmp_x8, k, tmp_x8);
         } else {
-            pj128simd_pyjamask_128_dec_x8(tmp_x8, k, tmp_x8);
+            pjsimd_pyjamask_128_dec_x8(tmp_x8, k, tmp_x8);
         }
 
         // Finally, XOR tmp and the offset into the output block. For decryption, also
@@ -256,11 +256,11 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
             /* Checksum_i = Checksum_{i-1} xor P_i */
             xor_block(sum, in, sum);
             /* C_i = Offset_i xor ENCIPHER(K, P_i xor Offset_i) */
-            pj128simd_pyjamask_128_enc(tmp, k, tmp);
+            pjsimd_pyjamask_128_enc(tmp, k, tmp);
             xor_block(out, offset, tmp);
         } else {
             /* P_i = Offset_i xor DECIPHER(K, C_i xor Offset_i) */
-            pj128simd_pyjamask_128_dec(tmp, k, tmp);
+            pjsimd_pyjamask_128_dec(tmp, k, tmp);
             xor_block(out, offset, tmp);
             /* Checksum_i = Checksum_{i-1} xor P_i */
             xor_block(sum, out, sum);
@@ -274,7 +274,7 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
         /* Offset_* = Offset_m xor L_* */
         xor_block(offset, offset, lstar);
         /* Pad = ENCIPHER(K, Offset_*) */
-        pj128simd_pyjamask_128_enc(offset, k, pad);
+        pjsimd_pyjamask_128_enc(offset, k, pad);
 
         if (encrypting) {
             /* Checksum_* = Checksum_m xor (P_* || 1 || zeros(127-bitlen(P_*))) */
@@ -302,7 +302,7 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
     /* Tag = ENCIPHER(K, Checksum xor Offset xor L_$) xor HASH(K,A) */
     xor_block(tmp, sum, offset);
     xor_block(tmp, tmp, ldollar);
-    pj128simd_pyjamask_128_enc(tmp, k, tag);
+    pjsimd_pyjamask_128_enc(tmp, k, tag);
     xor_block(tag, ad_hash, tag);
 
     if (encrypting) {

@@ -22,8 +22,8 @@
 ===============================================================================
  */
 
-void pj128ref_pyjamask_96_enc (const unsigned char *plaintext,  const unsigned char *key, unsigned char *ciphertext);
-void pj128ref_pyjamask_96_dec (const unsigned char *ciphertext, const unsigned char *key, unsigned char *plaintext);
+void pjref_pyjamask_96_enc (const unsigned char *plaintext,  const unsigned char *key, unsigned char *ciphertext);
+void pjref_pyjamask_96_dec (const unsigned char *ciphertext, const unsigned char *key, unsigned char *plaintext);
 
-void pj128ref_pyjamask_128_enc(const unsigned char *plaintext,  const unsigned char *key, unsigned char *ciphertext);
-void pj128ref_pyjamask_128_dec(const unsigned char *ciphertext, const unsigned char *key, unsigned char *plaintext );
+void pjref_pyjamask_128_enc(const unsigned char *plaintext,  const unsigned char *key, unsigned char *ciphertext);
+void pjref_pyjamask_128_dec(const unsigned char *ciphertext, const unsigned char *key, unsigned char *plaintext );

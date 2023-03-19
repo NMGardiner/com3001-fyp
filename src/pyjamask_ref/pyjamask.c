@@ -73,7 +73,7 @@
 //=== Common functions
 //==============================================================================
 
-void pj128ref_load_state(const uint8_t *plaintext, uint32_t *state, int state_size)
+void pjref_load_state(const uint8_t *plaintext, uint32_t *state, int state_size)
 {
     int i;
 
@@ -86,7 +86,7 @@ void pj128ref_load_state(const uint8_t *plaintext, uint32_t *state, int state_si
     }
 }
 
-void pj128ref_unload_state(uint8_t *ciphertext, const uint32_t *state, int state_size)
+void pjref_unload_state(uint8_t *ciphertext, const uint32_t *state, int state_size)
 {
     int i;
 
@@ -99,7 +99,7 @@ void pj128ref_unload_state(uint8_t *ciphertext, const uint32_t *state, int state
     }
 }
 
-uint32_t pj128ref_mat_mult(uint32_t mat_col, uint32_t vec)
+uint32_t pjref_mat_mult(uint32_t mat_col, uint32_t vec)
 {
     int i;
     uint32_t mask, res=0;
@@ -118,7 +118,7 @@ uint32_t pj128ref_mat_mult(uint32_t mat_col, uint32_t vec)
 //=== Key schedule
 //==============================================================================
 
-void pj128ref_ks_mix_comlumns(const uint32_t *ks_prev, uint32_t *ks_next)
+void pjref_ks_mix_comlumns(const uint32_t *ks_prev, uint32_t *ks_next)
 {
     uint32_t tmp;
 
@@ -130,15 +130,15 @@ void pj128ref_ks_mix_comlumns(const uint32_t *ks_prev, uint32_t *ks_next)
     ks_next[3] = ks_prev[3] ^ tmp;
 }
 
-void pj128ref_ks_mix_rotate_rows(uint32_t *ks_state)
+void pjref_ks_mix_rotate_rows(uint32_t *ks_state)
 {
-    ks_state[0] = pj128ref_mat_mult(COL_MK, ks_state[0]);
+    ks_state[0] = pjref_mat_mult(COL_MK, ks_state[0]);
     left_rotate(ks_state[1],KS_ROT_GAP1)
     left_rotate(ks_state[2],KS_ROT_GAP2)
     left_rotate(ks_state[3],KS_ROT_GAP3)
 }
 
-void pj128ref_ks_add_constant(uint32_t *ks_state, const uint32_t ctr)
+void pjref_ks_add_constant(uint32_t *ks_state, const uint32_t ctr)
 {
     ks_state[0] ^= KS_CONSTANT_0 ^ ctr;
     ks_state[1] ^= KS_CONSTANT_1;
@@ -146,20 +146,20 @@ void pj128ref_ks_add_constant(uint32_t *ks_state, const uint32_t ctr)
     ks_state[3] ^= KS_CONSTANT_3;
 }
 
-void pj128ref_key_schedule(const uint8_t *key, uint32_t* round_keys)
+void pjref_key_schedule(const uint8_t *key, uint32_t* round_keys)
 {
     int r;
     uint32_t *ks_state = round_keys;
 
-    pj128ref_load_state(key, ks_state, 4);
+    pjref_load_state(key, ks_state, 4);
 
     for (r=0; r<NB_ROUNDS_KS; r++)
     {
         ks_state += 4;
 
-        pj128ref_ks_mix_comlumns(ks_state-4, ks_state);
-        pj128ref_ks_mix_rotate_rows(ks_state);
-        pj128ref_ks_add_constant(ks_state,r);
+        pjref_ks_mix_comlumns(ks_state-4, ks_state);
+        pjref_ks_mix_rotate_rows(ks_state);
+        pjref_ks_add_constant(ks_state,r);
 
     }    
 }
@@ -168,14 +168,14 @@ void pj128ref_key_schedule(const uint8_t *key, uint32_t* round_keys)
 //=== Pyjamask-96 (encryption)
 //==============================================================================
 
-void pj128ref_mix_rows_96(uint32_t *state)
+void pjref_mix_rows_96(uint32_t *state)
 {
-    state[0] = pj128ref_mat_mult(COL_M0, state[0]);
-    state[1] = pj128ref_mat_mult(COL_M1, state[1]);
-    state[2] = pj128ref_mat_mult(COL_M2, state[2]);
+    state[0] = pjref_mat_mult(COL_M0, state[0]);
+    state[1] = pjref_mat_mult(COL_M1, state[1]);
+    state[2] = pjref_mat_mult(COL_M2, state[2]);
 }
 
-void pj128ref_sub_bytes_96(uint32_t *state)
+void pjref_sub_bytes_96(uint32_t *state)
 {
     state[0] ^= state[1];
     state[1] ^= state[2];
@@ -192,32 +192,32 @@ void pj128ref_sub_bytes_96(uint32_t *state)
     state[0] ^= state[1];
 }
 
-void pj128ref_add_round_key_96(uint32_t *state, const uint32_t *round_key, int r)
+void pjref_add_round_key_96(uint32_t *state, const uint32_t *round_key, int r)
 {
     state[0] ^= round_key[4*r+0];
     state[1] ^= round_key[4*r+1];
     state[2] ^= round_key[4*r+2];
 }
 
-void pj128ref_pyjamask_96_enc(const uint8_t *plaintext, const uint8_t *key, uint8_t *ciphertext)
+void pjref_pyjamask_96_enc(const uint8_t *plaintext, const uint8_t *key, uint8_t *ciphertext)
 {
     int r;
     uint32_t state[STATE_SIZE_96];
     uint32_t round_keys[4*(NB_ROUNDS_KS+1)];
 
-    pj128ref_key_schedule(key, round_keys);
-    pj128ref_load_state(plaintext, state, STATE_SIZE_96);
+    pjref_key_schedule(key, round_keys);
+    pjref_load_state(plaintext, state, STATE_SIZE_96);
 
     for (r=0; r<NB_ROUNDS_96; r++)
     {
-        pj128ref_add_round_key_96(state, round_keys, r);
-        pj128ref_sub_bytes_96(state);
-        pj128ref_mix_rows_96(state);
+        pjref_add_round_key_96(state, round_keys, r);
+        pjref_sub_bytes_96(state);
+        pjref_mix_rows_96(state);
     }
 
-    pj128ref_add_round_key_96(state, round_keys, NB_ROUNDS_96);
+    pjref_add_round_key_96(state, round_keys, NB_ROUNDS_96);
 
-    pj128ref_unload_state(ciphertext, state, STATE_SIZE_96);
+    pjref_unload_state(ciphertext, state, STATE_SIZE_96);
 }
 
 
@@ -225,14 +225,14 @@ void pj128ref_pyjamask_96_enc(const uint8_t *plaintext, const uint8_t *key, uint
 //=== Pyjamask-96 (decryption)
 //==============================================================================
 
-void pj128ref_inv_mix_rows_96(uint32_t *state)
+void pjref_inv_mix_rows_96(uint32_t *state)
 {
-    state[0] = pj128ref_mat_mult(COL_INV_M0, state[0]);
-    state[1] = pj128ref_mat_mult(COL_INV_M1, state[1]);
-    state[2] = pj128ref_mat_mult(COL_INV_M2, state[2]);
+    state[0] = pjref_mat_mult(COL_INV_M0, state[0]);
+    state[1] = pjref_mat_mult(COL_INV_M1, state[1]);
+    state[2] = pjref_mat_mult(COL_INV_M2, state[2]);
 }
 
-void pj128ref_inv_sub_bytes_96(uint32_t *state)
+void pjref_inv_sub_bytes_96(uint32_t *state)
 {
     // swap state[0] <-> state[1]
     state[0] ^= state[1];
@@ -249,40 +249,40 @@ void pj128ref_inv_sub_bytes_96(uint32_t *state)
     state[0] ^= state[1];
 }
 
-void pj128ref_pyjamask_96_dec(const uint8_t *ciphertext, const uint8_t *key, uint8_t *plaintext)
+void pjref_pyjamask_96_dec(const uint8_t *ciphertext, const uint8_t *key, uint8_t *plaintext)
 {
     int r;
     uint32_t state[STATE_SIZE_96];
     uint32_t round_keys[4*(NB_ROUNDS_KS+1)];
 
-    pj128ref_key_schedule(key, round_keys);
-    pj128ref_load_state(ciphertext, state, STATE_SIZE_96);
+    pjref_key_schedule(key, round_keys);
+    pjref_load_state(ciphertext, state, STATE_SIZE_96);
 
-    pj128ref_add_round_key_96(state, round_keys, NB_ROUNDS_96);
+    pjref_add_round_key_96(state, round_keys, NB_ROUNDS_96);
 
     for (r=NB_ROUNDS_96-1; r>=0; r--)
     {
-        pj128ref_inv_mix_rows_96(state);
-        pj128ref_inv_sub_bytes_96(state);
-        pj128ref_add_round_key_96(state, round_keys, r);
+        pjref_inv_mix_rows_96(state);
+        pjref_inv_sub_bytes_96(state);
+        pjref_add_round_key_96(state, round_keys, r);
     }
 
-    pj128ref_unload_state(plaintext, state, STATE_SIZE_96);
+    pjref_unload_state(plaintext, state, STATE_SIZE_96);
 }
 
 //==============================================================================
 //=== Pyjamask-128 (encryption)
 //==============================================================================
 
-void pj128ref_mix_rows_128(uint32_t *state)
+void pjref_mix_rows_128(uint32_t *state)
 {
-    state[0] = pj128ref_mat_mult(COL_M0, state[0]);
-    state[1] = pj128ref_mat_mult(COL_M1, state[1]);
-    state[2] = pj128ref_mat_mult(COL_M2, state[2]);
-    state[3] = pj128ref_mat_mult(COL_M3, state[3]);
+    state[0] = pjref_mat_mult(COL_M0, state[0]);
+    state[1] = pjref_mat_mult(COL_M1, state[1]);
+    state[2] = pjref_mat_mult(COL_M2, state[2]);
+    state[3] = pjref_mat_mult(COL_M3, state[3]);
 }
 
-void pj128ref_sub_bytes_128(uint32_t *state)
+void pjref_sub_bytes_128(uint32_t *state)
 {
     state[0] ^= state[3];
     state[3] ^= state[0] & state[1];
@@ -299,7 +299,7 @@ void pj128ref_sub_bytes_128(uint32_t *state)
     state[2] ^= state[3];
 }
 
-void pj128ref_add_round_key_128(uint32_t *state, const uint32_t *round_key, int r)
+void pjref_add_round_key_128(uint32_t *state, const uint32_t *round_key, int r)
 {
     state[0] ^= round_key[4*r+0];
     state[1] ^= round_key[4*r+1];
@@ -307,41 +307,41 @@ void pj128ref_add_round_key_128(uint32_t *state, const uint32_t *round_key, int 
     state[3] ^= round_key[4*r+3];
 }
 
-void pj128ref_pyjamask_128_enc(const uint8_t *plaintext, const uint8_t *key, uint8_t *ciphertext)
+void pjref_pyjamask_128_enc(const uint8_t *plaintext, const uint8_t *key, uint8_t *ciphertext)
 {
     int r;
     uint32_t state[STATE_SIZE_128];
     uint32_t round_keys[4*(NB_ROUNDS_KS+1)];
 
-    pj128ref_key_schedule(key, round_keys);
-    pj128ref_load_state(plaintext, state, STATE_SIZE_128);
+    pjref_key_schedule(key, round_keys);
+    pjref_load_state(plaintext, state, STATE_SIZE_128);
 
 
     for (r=0; r<NB_ROUNDS_128; r++)
     {
-        pj128ref_add_round_key_128(state, round_keys, r);
-        pj128ref_sub_bytes_128(state);
-        pj128ref_mix_rows_128(state);
+        pjref_add_round_key_128(state, round_keys, r);
+        pjref_sub_bytes_128(state);
+        pjref_mix_rows_128(state);
     }
 
-    pj128ref_add_round_key_128(state, round_keys, NB_ROUNDS_128);
+    pjref_add_round_key_128(state, round_keys, NB_ROUNDS_128);
     
-    pj128ref_unload_state(ciphertext, state, STATE_SIZE_128);
+    pjref_unload_state(ciphertext, state, STATE_SIZE_128);
 }
 
 //==============================================================================
 //=== Pyjamask-128 (decryption)
 //==============================================================================
 
-void pj128ref_inv_mix_rows_128(uint32_t *state)
+void pjref_inv_mix_rows_128(uint32_t *state)
 {
-    state[0] = pj128ref_mat_mult(COL_INV_M0, state[0]);
-    state[1] = pj128ref_mat_mult(COL_INV_M1, state[1]);
-    state[2] = pj128ref_mat_mult(COL_INV_M2, state[2]);
-    state[3] = pj128ref_mat_mult(COL_INV_M3, state[3]);
+    state[0] = pjref_mat_mult(COL_INV_M0, state[0]);
+    state[1] = pjref_mat_mult(COL_INV_M1, state[1]);
+    state[2] = pjref_mat_mult(COL_INV_M2, state[2]);
+    state[3] = pjref_mat_mult(COL_INV_M3, state[3]);
 }
 
-void pj128ref_inv_sub_bytes_128(uint32_t *state)
+void pjref_inv_sub_bytes_128(uint32_t *state)
 {
     // swap state[2] <-> state[3]
     state[2] ^= state[3];
@@ -358,25 +358,25 @@ void pj128ref_inv_sub_bytes_128(uint32_t *state)
     state[0] ^= state[3];
 }
 
-void pj128ref_pyjamask_128_dec(const uint8_t *ciphertext, const uint8_t *key, uint8_t *plaintext)
+void pjref_pyjamask_128_dec(const uint8_t *ciphertext, const uint8_t *key, uint8_t *plaintext)
 {
     int r;
     uint32_t state[STATE_SIZE_128];
     uint32_t round_keys[4*(NB_ROUNDS_KS+1)];
 
-    pj128ref_key_schedule(key, round_keys);
-    pj128ref_load_state(ciphertext, state, STATE_SIZE_128);
+    pjref_key_schedule(key, round_keys);
+    pjref_load_state(ciphertext, state, STATE_SIZE_128);
 
-    pj128ref_add_round_key_128(state, round_keys, NB_ROUNDS_128);
+    pjref_add_round_key_128(state, round_keys, NB_ROUNDS_128);
     
     for (r=NB_ROUNDS_128-1; r>=0; r--)
     {
-        pj128ref_inv_mix_rows_128(state);
-        pj128ref_inv_sub_bytes_128(state);
-        pj128ref_add_round_key_128(state, round_keys, r);
+        pjref_inv_mix_rows_128(state);
+        pjref_inv_sub_bytes_128(state);
+        pjref_add_round_key_128(state, round_keys, r);
     }
 
-    pj128ref_unload_state(plaintext, state, STATE_SIZE_128);
+    pjref_unload_state(plaintext, state, STATE_SIZE_128);
 }
 
 

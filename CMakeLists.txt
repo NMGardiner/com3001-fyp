@@ -71,13 +71,23 @@ add_executable(testbench
 	# Schwaemm256_256 SIMD-optimised algorithm
 	"src/schwaemm256256_simd/encrypt.c"
 
+	# Pyjamask reference algorithm
+	"src/pyjamask_ref/pyjamask.c"
+
+	# Pyjamask SIMD-optimised algorithm
+	"src/pyjamask_simd/pyjamask.c"
+
 	# Pyjamask128 reference algorithm
 	"src/pyjamask128_ref/encrypt.c"
-	"src/pyjamask128_ref/pyjamask.c"
 
 	# Pyjamask128 SIMD-optimised algorithm
 	"src/pyjamask128_simd/encrypt.c"
-	"src/pyjamask128_simd/pyjamask.c"
+
+	# Pyjamask96 reference algorithm
+	"src/pyjamask96_ref/encrypt.c"
+
+	# Pyjamask96 SIMD-optimised algorithm
+	"src/pyjamask96_simd/encrypt.c"
 )
 
 target_include_directories(testbench PRIVATE

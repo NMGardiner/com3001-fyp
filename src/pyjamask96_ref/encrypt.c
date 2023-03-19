@@ -1,5 +1,5 @@
 /*
-Pyjamask-128-OCB reference code
+Pyjamask-96-OCB reference code
 Modified by: Siang Meng Sim
 Email: crypto.s.m.sim@gmail.com
 Date : 25/02/2019
@@ -45,30 +45,32 @@ Date : 25/02/2019
 #include <string.h>
 
 #include "api.h"
-#define KEYBYTES   PJ128REF_CRYPTO_KEYBYTES
-#define NONCEBYTES PJ128REF_CRYPTO_NPUBBYTES
-#define TAGBYTES   PJ128REF_CRYPTO_ABYTES
+#define KEYBYTES   PJ96REF_CRYPTO_KEYBYTES
+#define NONCEBYTES PJ96REF_CRYPTO_NPUBBYTES
+#define TAGBYTES   PJ96REF_CRYPTO_ABYTES
 
 #include "pyjamask_ref/pyjamask.h"
 
-typedef unsigned char block[16];
+typedef unsigned char block[12];
 
 /* ------------------------------------------------------------------------- */
 
 static void xor_block(block d, block s1, block s2) {
     unsigned i;
-    for (i=0; i<16; i++)
+    for (i=0; i<12; i++)
         d[i] = s1[i] ^ s2[i];
 }
 
 /* ------------------------------------------------------------------------- */
 
 static void double_block(block d, block s) {
+    /*irreducible polynomial = x^{96} + x^{10} + x^{9} + x^{6} + 1*/
     unsigned i;
     unsigned char tmp = s[0];
-    for (i=0; i<15; i++)
+    for (i=0; i<11; i++)
         d[i] = (s[i] << 1) | (s[i+1] >> 7);
-    d[15] = (s[15] << 1) ^ ((tmp >> 7) * 135);
+    d[11] = (s[11] << 1) ^ ((tmp >> 7) * 65);   /*2^6 + 1*/
+    d[10] ^= ((tmp >> 7) * 6); /*2^{10-8} + 2^{9-8}*/
 }
 
 /* ------------------------------------------------------------------------- */
@@ -88,55 +90,55 @@ static void hash(block result, unsigned char *k,
 
     /* Key-dependent variables */
 
-    /* L_* = ENCIPHER(K, zeros(128)) */
+    /* L_* = ENCIPHER(K, zeros(96)) */
 //    AES_set_encrypt_key(k, KEYBYTES*8, &aes_key);
-    memset(tmp, 0, 16);
-    pjref_pyjamask_128_enc(tmp, k, lstar);
+    memset(tmp, 0, 12);
+    pjref_pyjamask_96_enc(tmp, k, lstar);
     /* L_$ = double(L_*) */
     double_block(ldollar, lstar);
 
     /* Process any whole blocks */
 
-    /* Sum_0 = zeros(128) */
-    memset(sum, 0, 16);
-    /* Offset_0 = zeros(128) */
-    memset(offset, 0, 16);
-    for (i=1; i<=abytes/16; i++, a = a + 16) {
+    /* Sum_0 = zeros(96) */
+    memset(sum, 0, 12);
+    /* Offset_0 = zeros(96) */
+    memset(offset, 0, 12);
+    for (i=1; i<=abytes/12; i++, a = a + 12) {
         /* Offset_i = Offset_{i-1} xor L_{ntz(i)} */
         calc_L_i(tmp, ldollar, i);
         xor_block(offset, offset, tmp);
         /* Sum_i = Sum_{i-1} xor ENCIPHER(K, A_i xor Offset_i) */
         xor_block(tmp, offset, a);
-        pjref_pyjamask_128_enc(tmp, k, tmp);
+        pjref_pyjamask_96_enc(tmp, k, tmp);
         xor_block(sum, sum, tmp);
     }
 
     /* Process any final partial block; compute final hash value */
 
-    abytes = abytes % 16;  /* Bytes in final block */
+    abytes = abytes % 12;  /* Bytes in final block */
     if (abytes > 0) {
         /* Offset_* = Offset_m xor L_* */
         xor_block(offset, offset, lstar);
-        /* tmp = (A_* || 1 || zeros(127-bitlen(A_*))) xor Offset_* */
-        memset(tmp, 0, 16);
+        /* tmp = (A_* || 1 || zeros(95-bitlen(A_*))) xor Offset_* */
+        memset(tmp, 0, 12);
         memcpy(tmp, a, abytes);
         tmp[abytes] = 0x80;
         xor_block(tmp, offset, tmp);
         /* Sum = Sum_m xor ENCIPHER(K, tmp) */
-        pjref_pyjamask_128_enc(tmp, k, tmp);
+        pjref_pyjamask_96_enc(tmp, k, tmp);
         xor_block(sum, tmp, sum);
     }
 
-    memcpy(result, sum, 16);
+    memcpy(result, sum, 12);
 }
 
 /* ------------------------------------------------------------------------- */
 
-static int pj128ref_ocb_crypt(unsigned char *out, unsigned char *k, unsigned char *n,
+static int pj96ref_ocb_crypt(unsigned char *out, unsigned char *k, unsigned char *n,
                      unsigned char *a, unsigned abytes,
                      unsigned char *in, unsigned inbytes, int encrypting) {
     block lstar, ldollar, sum, offset, ktop, pad, nonce, tag, tmp, ad_hash;
-    unsigned char stretch[24];
+    unsigned char stretch[20];
     unsigned bottom, byteshift, bitshift, i;
 
     /* Setup AES and strip ciphertext of its tag */
@@ -148,47 +150,49 @@ static int pj128ref_ocb_crypt(unsigned char *out, unsigned char *k, unsigned cha
     /* Key-dependent variables */
 
     /* L_* = ENCIPHER(K, zeros(128)) */
-    memset(tmp, 0, 16);
-    pjref_pyjamask_128_enc(tmp, k, lstar);
+    memset(tmp, 0, 12);
+    pjref_pyjamask_96_enc(tmp, k, lstar);
     /* L_$ = double(L_*) */
     double_block(ldollar, lstar);
 
     /* Nonce-dependent and per-encryption variables */
 
     /* Nonce = zeros(127-bitlen(N)) || 1 || N */
-    memset(nonce,0,16);
-    memcpy(&nonce[16-NONCEBYTES],n,NONCEBYTES);
+    memset(nonce,0,12);
+    memcpy(&nonce[12-NONCEBYTES],n,NONCEBYTES);
     nonce[0] = (unsigned char)(((TAGBYTES * 8) % 128) << 1);
-    nonce[16-NONCEBYTES-1] |= 0x01;
-    /* bottom = str2num(Nonce[123..128]) */
-    bottom = nonce[15] & 0x3F;
-    /* Ktop = ENCIPHER(K, Nonce[1..122] || zeros(6)) */
-    nonce[15] &= 0xC0;
-    pjref_pyjamask_128_enc(nonce, k, ktop);
+    nonce[12-NONCEBYTES-1] |= 0x01;
+    /* bottom = str2num(Nonce[91..96]) */
+    bottom = nonce[11] & 0x3F;
+    /* Ktop = ENCIPHER(K, Nonce[1..90] || zeros(6)) */
+    nonce[11] &= 0xC0;
+    pjref_pyjamask_96_enc(nonce, k, ktop);
     /* Stretch = Ktop || (Ktop[1..64] xor Ktop[9..72]) */
-    memcpy(stretch, ktop, 16);
-    memcpy(tmp, &ktop[1], 8);
+    memcpy(stretch, ktop, 12);
+    for(i=0;i<8;i++){
+        tmp[i] = (ktop[i+1]<<1) | (ktop[i+2]>>7);   /*OCB96: leftshift 9 bits*/
+    }
     xor_block(tmp, tmp, ktop);
-    memcpy(&stretch[16],tmp,8);
+    memcpy(&stretch[12],tmp,8);
     /* Offset_0 = Stretch[1+bottom..128+bottom] */
     byteshift = bottom/8;
     bitshift  = bottom%8;
     if (bitshift != 0)
-        for (i=0; i<16; i++)
+        for (i=0; i<12; i++)
             offset[i] = (stretch[i+byteshift] << bitshift) |
                         (stretch[i+byteshift+1] >> (8-bitshift));
     else
-        for (i=0; i<16; i++)
+        for (i=0; i<12; i++)
             offset[i] = stretch[i+byteshift];
-    /* Checksum_0 = zeros(128) */
-    memset(sum, 0, 16);
+    /* Checksum_0 = zeros(96) */
+    memset(sum, 0, 12);
 
     /* Hash associated data */
     hash(ad_hash, k, a, abytes);
 
     /* Process any whole blocks */
 
-    for (i=1; i<=inbytes/16; i++, in=in+16, out=out+16) {
+    for (i=1; i<=inbytes/12; i++, in=in+12, out=out+12) {
         /* Offset_i = Offset_{i-1} xor L_{ntz(i)} */
         calc_L_i(tmp, ldollar, i);
         xor_block(offset, offset, tmp);
@@ -198,11 +202,11 @@ static int pj128ref_ocb_crypt(unsigned char *out, unsigned char *k, unsigned cha
             /* Checksum_i = Checksum_{i-1} xor P_i */
             xor_block(sum, in, sum);
             /* C_i = Offset_i xor ENCIPHER(K, P_i xor Offset_i) */
-            pjref_pyjamask_128_enc(tmp, k, tmp);
+            pjref_pyjamask_96_enc(tmp, k, tmp);
             xor_block(out, offset, tmp);
         } else {
             /* P_i = Offset_i xor DECIPHER(K, C_i xor Offset_i) */
-            pjref_pyjamask_128_dec(tmp, k, tmp);
+            pjref_pyjamask_96_dec(tmp, k, tmp);
             xor_block(out, offset, tmp);
             /* Checksum_i = Checksum_{i-1} xor P_i */
             xor_block(sum, out, sum);
@@ -211,16 +215,16 @@ static int pj128ref_ocb_crypt(unsigned char *out, unsigned char *k, unsigned cha
 
     /* Process any final partial block and compute raw tag */
 
-    inbytes = inbytes % 16;  /* Bytes in final block */
+    inbytes = inbytes % 12;  /* Bytes in final block */
     if (inbytes > 0) {
         /* Offset_* = Offset_m xor L_* */
         xor_block(offset, offset, lstar);
         /* Pad = ENCIPHER(K, Offset_*) */
-        pjref_pyjamask_128_enc(offset, k, pad);
+        pjref_pyjamask_96_enc(offset, k, pad);
 
         if (encrypting) {
             /* Checksum_* = Checksum_m xor (P_* || 1 || zeros(127-bitlen(P_*))) */
-            memset(tmp, 0, 16);
+            memset(tmp, 0, 12);
             memcpy(tmp, in, inbytes);
             tmp[inbytes] = 0x80;
             xor_block(sum, tmp, sum);
@@ -230,7 +234,7 @@ static int pj128ref_ocb_crypt(unsigned char *out, unsigned char *k, unsigned cha
             out = out + inbytes;
         } else {
             /* P_* = C_* xor Pad[1..bitlen(C_*)] */
-            memcpy(tmp, pad, 16);
+            memcpy(tmp, pad, 12);
             memcpy(tmp, in, inbytes);
             xor_block(tmp, pad, tmp);
             tmp[inbytes] = 0x80;     /* tmp == P_* || 1 || zeros(127-bitlen(P_*)) */
@@ -244,7 +248,7 @@ static int pj128ref_ocb_crypt(unsigned char *out, unsigned char *k, unsigned cha
     /* Tag = ENCIPHER(K, Checksum xor Offset xor L_$) xor HASH(K,A) */
     xor_block(tmp, sum, offset);
     xor_block(tmp, tmp, ldollar);
-    pjref_pyjamask_128_enc(tmp, k, tag);
+    pjref_pyjamask_96_enc(tmp, k, tag);
     xor_block(tag, ad_hash, tag);
 
     if (encrypting) {
@@ -259,23 +263,23 @@ static int pj128ref_ocb_crypt(unsigned char *out, unsigned char *k, unsigned cha
 #define OCB_ENCRYPT 1
 #define OCB_DECRYPT 0
 
-void pj128ref_ocb_encrypt(unsigned char *c, unsigned char *k, unsigned char *n,
+void pj96ref_ocb_encrypt(unsigned char *c, unsigned char *k, unsigned char *n,
                  unsigned char *a, unsigned abytes,
                  unsigned char *p, unsigned pbytes) {
-    pj128ref_ocb_crypt(c, k, n, a, abytes, p, pbytes, OCB_ENCRYPT);
+    pj96ref_ocb_crypt(c, k, n, a, abytes, p, pbytes, OCB_ENCRYPT);
 }
 
 /* ------------------------------------------------------------------------- */
 
-int pj128ref_ocb_decrypt(unsigned char *p, unsigned char *k, unsigned char *n,
+int pj96ref_ocb_decrypt(unsigned char *p, unsigned char *k, unsigned char *n,
                 unsigned char *a, unsigned abytes,
                 unsigned char *c, unsigned cbytes) {
-    return pj128ref_ocb_crypt(p, k, n, a, abytes, c, cbytes, OCB_DECRYPT);
+    return pj96ref_ocb_crypt(p, k, n, a, abytes, c, cbytes, OCB_DECRYPT);
 }
 
 /* ------------------------------------------------------------------------- */
 
-int pj128ref_crypto_aead_encrypt(
+int pj96ref_crypto_aead_encrypt(
 unsigned char *c,unsigned long long *clen,
 const unsigned char *m,unsigned long long mlen,
 const unsigned char *ad,unsigned long long adlen,
@@ -286,12 +290,12 @@ const unsigned char *k
 {
     (void) (nsec); // unused argument
     *clen = mlen + TAGBYTES;
-    pj128ref_ocb_crypt(c, (unsigned char *)k, (unsigned char *)npub, (unsigned char *)ad,
+    pj96ref_ocb_crypt(c, (unsigned char *)k, (unsigned char *)npub, (unsigned char *)ad,
             adlen, (unsigned char *)m, mlen, OCB_ENCRYPT);
     return 0;
 }
 
-int pj128ref_crypto_aead_decrypt(
+int pj96ref_crypto_aead_decrypt(
 unsigned char *m,unsigned long long *mlen,
 unsigned char *nsec,
 const unsigned char *c,unsigned long long clen,
@@ -302,7 +306,7 @@ const unsigned char *k
 {
     (void) (nsec); // unused argument
     *mlen = clen - TAGBYTES;
-    return pj128ref_ocb_crypt(m, (unsigned char *)k, (unsigned char *)npub,
+    return pj96ref_ocb_crypt(m, (unsigned char *)k, (unsigned char *)npub,
             (unsigned char *)ad, adlen, (unsigned char *)c, clen, OCB_DECRYPT);
 }
 

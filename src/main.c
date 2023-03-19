@@ -29,6 +29,9 @@
 #include "schwaemm256256_ref/api.h"
 #include "schwaemm256256_simd/api.h"
 
+#include "pyjamask96_ref/api.h"
+#include "pyjamask96_simd/api.h"
+
 #include "pyjamask128_ref/api.h"
 #include "pyjamask128_simd/api.h"
 
@@ -792,6 +795,17 @@ int main(void)
         e384simd_crypto_hash
     };
 
+    struct aead_variant pj96 = {
+        "Pyjamask96",
+        PJ96REF_CRYPTO_KEYBYTES,
+        PJ96REF_CRYPTO_ABYTES,
+        PJ96REF_CRYPTO_NPUBBYTES,
+        pj96ref_crypto_aead_encrypt,
+        pj96ref_crypto_aead_decrypt,
+        pj96simd_crypto_aead_encrypt,
+        pj96simd_crypto_aead_decrypt
+    };
+
     struct aead_variant pj128 = {
         "Pyjamask128",
         PJ128REF_CRYPTO_KEYBYTES,
@@ -815,7 +829,8 @@ int main(void)
     time_esch(NUM_RESULTS, hash_input_len, &e256, 0);
     time_esch(NUM_RESULTS, hash_input_len, &e384, 0);
 
-    time_aead(NUM_RESULTS,  encryption_input_len, encryption_ad_len, &pj128, 0);
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &pj96, 0);
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &pj128, 0);
 
     // Proof of concept for measuring changes in parameters. Use this later?
 #if 0
