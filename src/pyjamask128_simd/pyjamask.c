@@ -28,6 +28,11 @@
 
 #if USE_AVX2
 #include <immintrin.h>
+
+#ifndef OPTIMISE_MIX_ROWS
+#define OPTIMISE_MIX_ROWS 1
+#endif
+
 #endif
 
 //==============================================================================
@@ -158,7 +163,11 @@ void pj128simd_unload_state(uint8_t *ciphertext, const uint32_t *state, int stat
 }
 
 #if USE_AVX2
+#if OPTIMISE_MIX_ROWS
+__m256i pj128simd_mat_mult_x8(uint32_t mat_col, __m256i vec) {
+#else
 __m256i pj128simd_mat_mult_x8(__m256i mat_col, __m256i vec) {
+#endif
     __m256i mask, res = _mm256_set1_epi32(0);
 
     for (int i = 31; i >= 0; i--) {
@@ -170,12 +179,18 @@ __m256i pj128simd_mat_mult_x8(__m256i mat_col, __m256i vec) {
         mask = _mm256_sign_epi32(mask, _mm256_set1_epi32(-1));
 
         // res ^= mask & mat_col;
+#if OPTIMISE_MIX_ROWS
+        res = _mm256_xor_si256(res, _mm256_and_si256(mask, _mm256_set1_epi32(mat_col)));
+
+        right_rotate(mat_col)
+#else
         res = _mm256_xor_si256(res, _mm256_and_si256(mask, mat_col));
 
         // right_rotate(mat_col);
         mat_col = _mm256_or_epi32(
             _mm256_srli_epi32(mat_col, 1),
             _mm256_slli_epi32(mat_col, 31));
+#endif
     }
 
     return res;
@@ -360,10 +375,18 @@ void pj128simd_pyjamask_96_dec(const uint8_t *ciphertext, const uint8_t *key, ui
 #if USE_AVX2
 void pj128simd_mix_rows_128_x8(__m256i* state)
 {
+#if OPTIMISE_MIX_ROWS
+    state[0] = pj128simd_mat_mult_x8(COL_M0, state[0]);
+    state[1] = pj128simd_mat_mult_x8(COL_M1, state[1]);
+    state[2] = pj128simd_mat_mult_x8(COL_M2, state[2]);
+    state[3] = pj128simd_mat_mult_x8(COL_M3, state[3]);
+
+#else
     state[0] = pj128simd_mat_mult_x8(_mm256_set1_epi32(COL_M0), state[0]);
     state[1] = pj128simd_mat_mult_x8(_mm256_set1_epi32(COL_M1), state[1]);
     state[2] = pj128simd_mat_mult_x8(_mm256_set1_epi32(COL_M2), state[2]);
     state[3] = pj128simd_mat_mult_x8(_mm256_set1_epi32(COL_M3), state[3]);
+#endif
 }
 #endif
 
@@ -483,10 +506,17 @@ void pj128simd_pyjamask_128_enc(const uint8_t *plaintext, const uint8_t *key, ui
 #if USE_AVX2
 void pj128simd_inv_mix_rows_128_x8(__m256i* state)
 {
+#if OPTIMISE_MIX_ROWS
+    state[0] = pj128simd_mat_mult_x8(COL_INV_M0, state[0]);
+    state[1] = pj128simd_mat_mult_x8(COL_INV_M1, state[1]);
+    state[2] = pj128simd_mat_mult_x8(COL_INV_M2, state[2]);
+    state[3] = pj128simd_mat_mult_x8(COL_INV_M3, state[3]);
+#else
     state[0] = pj128simd_mat_mult_x8(_mm256_set1_epi32(COL_INV_M0), state[0]);
     state[1] = pj128simd_mat_mult_x8(_mm256_set1_epi32(COL_INV_M1), state[1]);
     state[2] = pj128simd_mat_mult_x8(_mm256_set1_epi32(COL_INV_M2), state[2]);
     state[3] = pj128simd_mat_mult_x8(_mm256_set1_epi32(COL_INV_M3), state[3]);
+#endif
 }
 #endif
 
