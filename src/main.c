@@ -40,7 +40,10 @@
 typedef unsigned char UChar;
 typedef unsigned long long int ULLInt;
 
-#define NUM_RESULTS 20
+#define NUM_RESULTS 50
+
+#define NEW_REPORTING_FORMAT 1
+#define OUTLIER_PASSES 2
 
 //
 // A timer abstraction for working with MSVC and GCC
@@ -129,6 +132,7 @@ void print_double_array(double *arr, unsigned int in_len, const char* label) {
     printf(" ]\n");
 }
 
+#if !NEW_REPORTING_FORMAT
 double calculate_average(double* arr, unsigned int in_len) {
     double result = 0.0f;
     for (unsigned int i = 0; i < in_len; i++) {
@@ -161,6 +165,78 @@ unsigned int clean_data(double* arr, unsigned int in_len, double mean, double* o
 
     return new_len;
 }
+#else
+// Calculate mean, with truncation to an int.
+long long calculate_mean(long long* in, unsigned int in_len) {
+    long long result = 0.0f;
+    for (unsigned int i = 0; i < in_len; i++) {
+        result += in[i];
+    }
+
+    return result / in_len;
+}
+
+// Parameters:
+// in: The input array.
+// in_len: The length of the input array.
+// out: Array in which the cleaned data will be stored. len(out) <= in_len.
+// out_len: Pointer to write the cleaned data length to.
+// outlier_passes: Number of passes to apply when removing outliers.
+//
+// Returns:
+// The average of the cleaned data.
+long long clean_and_calculate_average(long long* in, unsigned int in_len, long long* out,
+    unsigned int* out_len, unsigned int outlier_passes) {
+
+    // Recalculated to match the length excluding outliers.
+    unsigned int new_len = in_len;
+
+    long long* temp_array = malloc(in_len * sizeof(long long));
+    memcpy(temp_array, in, in_len * sizeof(long long));
+
+    for (unsigned int i = 0; i < outlier_passes; i++) {
+        // Calculate the mean of the data for this pass.
+        long long mean = calculate_mean(temp_array, new_len);
+
+        // For the standard deviation calculation.
+        double sum = 0.0f;
+        for (unsigned int j = 0; j < new_len; j++) {
+            sum += pow((temp_array[j] - mean), 2);
+        }
+
+        // Calculate the standard deviation of the data for this pass.
+        double sd = sqrt(sum / (double)new_len);
+
+        // Calculate Z-scores, and use these to exclude outliers.
+        unsigned int temp_len = 0;
+        for (unsigned int j = 0; j < new_len; j++) {
+            double z_score = (temp_array[j] - mean) / sd;
+
+            // Only keep results within 2 standard deviations of the mean.
+            if (fabs(z_score) <= 2.0f) {
+                temp_array[temp_len] = temp_array[j];
+                temp_len++;
+            }
+        }
+
+        // Update the new length.
+        new_len = temp_len;
+    }
+
+    // Calculate the average of the cleaned data.
+    long long final_average = calculate_mean(temp_array, new_len);
+
+    // Copy back the cleaned data to the output array.
+    memcpy(out, temp_array, new_len * sizeof(long long));
+
+    free(temp_array);
+
+    // Set out_len.
+    *out_len = new_len;
+
+    return final_average;
+}
+#endif
 
 int verify_aead(int debug, struct aead_variant* variant) {
     int validation_result = 1;
@@ -263,7 +339,7 @@ int verify_aead(int debug, struct aead_variant* variant) {
     return validation_result;
 }
 
-void time_aead(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struct aead_variant* variant) {
+void time_aead(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struct aead_variant* variant, int debug) {
     ULLInt output_len = input_len + variant->ad_crypt_len;
 
     UChar* plaintext = malloc(input_len * sizeof(UChar));
@@ -371,6 +447,55 @@ void time_aead(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struct ae
     int does_validation_pass = verify_aead(0, variant);
 
     printf("\n%s:\n", variant->name);
+
+#if NEW_REPORTING_FORMAT
+    if (do_results_match) {
+        long long cleaned_timings[NUM_RESULTS];
+        unsigned int cleaned_timings_len = NUM_RESULTS;
+
+        long long ref_enc_average = clean_and_calculate_average(ref_enc_timings, NUM_RESULTS,
+            cleaned_timings, &cleaned_timings_len, OUTLIER_PASSES);
+        unsigned int ref_enc_removed = NUM_RESULTS - cleaned_timings_len;
+
+        if (debug) {
+            print_results_array(cleaned_timings, cleaned_timings_len, "ref_e");
+        }
+
+        long long simd_enc_average = clean_and_calculate_average(simd_enc_timings, NUM_RESULTS,
+            cleaned_timings, &cleaned_timings_len, OUTLIER_PASSES);
+        unsigned int simd_enc_removed = NUM_RESULTS - cleaned_timings_len;
+
+        if (debug) {
+            print_results_array(cleaned_timings, cleaned_timings_len, "opt_e");
+        }
+
+        long long ref_dec_average = clean_and_calculate_average(ref_dec_timings, NUM_RESULTS,
+            cleaned_timings, &cleaned_timings_len, OUTLIER_PASSES);
+        unsigned int ref_dec_removed = NUM_RESULTS - cleaned_timings_len;
+
+        if (debug) {
+            print_results_array(cleaned_timings, cleaned_timings_len, "ref_d");
+        }
+
+        long long simd_dec_average = clean_and_calculate_average(simd_dec_timings, NUM_RESULTS,
+            cleaned_timings, &cleaned_timings_len, OUTLIER_PASSES);
+        unsigned int simd_dec_removed = NUM_RESULTS - cleaned_timings_len;
+
+        if (debug) {
+            print_results_array(cleaned_timings, cleaned_timings_len, "opt_d");
+        }
+
+        double diff = ((double)(ref_enc_average - simd_enc_average) / ref_enc_average) * 100.0f;
+        printf("Encryption Improvement: %.2f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
+            ref_enc_average, simd_enc_average, ref_enc_removed, simd_enc_removed);
+
+        diff = ((double)(ref_dec_average - simd_dec_average) / ref_dec_average) * 100.0f;
+        printf("Decrpytion Improvement: %.2f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
+            ref_dec_average, simd_dec_average, ref_dec_removed, simd_dec_removed);
+    } else {
+        printf("[ERROR] %s timing yielded incorrect results!\n", variant->name);
+    }
+#else
     if (do_results_match) {
         print_results_array(ref_enc_timings, NUM_RESULTS, "ref_e");
         print_results_array(simd_enc_timings, NUM_RESULTS, "opt_e");
@@ -402,6 +527,7 @@ void time_aead(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struct ae
     } else {
         printf("[ERROR] %s timing yielded incorrect results!\n", variant->name);
     }
+#endif
 
     printf("Validation: %s\n", does_validation_pass ? "SUCCESS" : "FAILURE");
 
@@ -481,7 +607,7 @@ int verify_esch(int debug, struct esch_variant* variant) {
     return validation_result;
 }
 
-void time_esch(unsigned int num_runs, ULLInt input_len, struct esch_variant* variant) {
+void time_esch(unsigned int num_runs, ULLInt input_len, struct esch_variant* variant, int debug) {
     UChar* plaintext = malloc(input_len * sizeof(UChar));
     for (unsigned int i = 0; i < input_len; i++) {
         plaintext[i] = (UChar)i;
@@ -537,6 +663,35 @@ void time_esch(unsigned int num_runs, ULLInt input_len, struct esch_variant* var
     int does_validation_pass = verify_esch(0, variant);
 
     printf("\n%s:\n", variant->name);
+
+#if NEW_REPORTING_FORMAT
+    if (do_results_match) {
+        long long cleaned_timings[NUM_RESULTS];
+        unsigned int cleaned_timings_len = NUM_RESULTS;
+
+        long long ref_average = clean_and_calculate_average(ref_timings, NUM_RESULTS,
+            cleaned_timings, &cleaned_timings_len, OUTLIER_PASSES);
+        unsigned int ref_removed = NUM_RESULTS - cleaned_timings_len;
+
+        if (debug) {
+            print_results_array(cleaned_timings, cleaned_timings_len, "ref");
+        }
+
+        long long simd_average = clean_and_calculate_average(simd_timings, NUM_RESULTS,
+            cleaned_timings, &cleaned_timings_len, OUTLIER_PASSES);
+        unsigned int simd_removed = NUM_RESULTS - cleaned_timings_len;
+
+        if (debug) {
+            print_results_array(cleaned_timings, cleaned_timings_len, "simd");
+        }
+
+        double diff = ((double)(ref_average - simd_average) / ref_average) * 100.0f;
+        printf("Hashing Improvement: %.2f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
+            ref_average, simd_average, ref_removed, simd_removed);
+    } else {
+        printf("[ERROR] %s timing yielded incorrect results!\n", variant->name);
+    }
+#else
     if (do_results_match) {
         print_results_array(ref_timings, NUM_RESULTS, "ref  ");
         print_results_array(simd_timings, NUM_RESULTS, "opt  ");
@@ -555,6 +710,7 @@ void time_esch(unsigned int num_runs, ULLInt input_len, struct esch_variant* var
     } else {
         printf("[ERROR] %s timing yielded incorrect results!\n", variant->name);
     }
+#endif
 
     printf("Validation: %s\n", does_validation_pass ? "SUCCESS" : "FAILURE");
 
@@ -636,18 +792,6 @@ int main(void)
         e384simd_crypto_hash
     };
 
-    ULLInt encryption_input_len = 1 << 16;
-    ULLInt encryption_ad_len = 1 << 12;
-    ULLInt hash_input_len = 1 << 16;
-
-    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s128128);
-    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s192192);
-    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256128);
-    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256256);
-
-    time_esch(NUM_RESULTS, hash_input_len, &e256);
-    time_esch(NUM_RESULTS, hash_input_len, &e384);
-
     struct aead_variant pj128 = {
         "Pyjamask128",
         PJ128REF_CRYPTO_KEYBYTES,
@@ -659,7 +803,28 @@ int main(void)
         pj128simd_crypto_aead_decrypt
     };
 
-    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &pj128);
+    ULLInt encryption_input_len = 1 << 16;
+    ULLInt encryption_ad_len = 1 << 12;
+    ULLInt hash_input_len = 1 << 16;
+
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s128128, 0);
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s192192, 0);
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256128, 0);
+    time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256256, 0);
+
+    time_esch(NUM_RESULTS, hash_input_len, &e256, 0);
+    time_esch(NUM_RESULTS, hash_input_len, &e384, 0);
+
+    time_aead(NUM_RESULTS,  encryption_input_len, encryption_ad_len, &pj128, 0);
+
+    // Proof of concept for measuring changes in parameters. Use this later?
+#if 0
+    unsigned int test_input_lens[8] = { 0, 8, 64, 128, 256, 512, 1024, 65536 };
+    for (unsigned int i = 0; i < 8; i++) {
+        printf("\n\ninput_len = %u\n", test_input_lens[i]);
+        time_aead(NUM_RESULTS, test_input_lens[i], encryption_ad_len, &pj128, 0);
+    }
+#endif
 
     return 1;
 }
