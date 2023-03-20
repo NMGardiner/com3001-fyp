@@ -94,3 +94,6 @@ target_include_directories(testbench PRIVATE
 	# Require specifying directory to avoid ref/SIMD mixups.
 	"src/"
 )
+
+# Link the the math library for sqrt etc on GCC.
+target_link_libraries(testbench PRIVATE m)

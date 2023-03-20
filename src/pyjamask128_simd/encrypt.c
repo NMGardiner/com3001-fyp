@@ -54,7 +54,6 @@ Date : 25/02/2019
 #include "platform_defines.h"
 
 #if USE_AVX2
-#include <immintrin.h>
 #include <stdint.h>
 #endif
 
@@ -195,6 +194,7 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
 
     /* Process any whole blocks */
 
+    // Don't combine AVX2/NEON into one, as we may do 4 blocks with AVX eventually.
 #if USE_AVX2
     // Process groups of 8 128-bit blocks first.
     for (i = 1; i + 7 <= (inbytes / 16); i += 8, in += (16 * 8), out += (16 * 8)) {
@@ -239,9 +239,53 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
         // Copy back offset from the final block.
         memcpy(offset, offset_x8[7], 16);
     }
+#elif USE_NEON
+    // Process groups of 4 128-bit blocks first.
+    for (i = 1; i + 3 <= (inbytes / 16); i += 4, in += (16 * 4), out += (16 * 4)) {
+        block tmp_x4[4];
+        block offset_x4[4];
+
+        // Pre-process everything for the next 4 blocks.
+        for (unsigned int j = 0; j < 4; j++) {
+            // Calculate L_i.
+            calc_L_i(tmp_x4[j], ldollar, j + i);
+
+            // XOR L_i into the offset.
+            memcpy(offset_x4[j], (j == 0) ? offset : offset_x4[j - 1], 16);
+            xor_block(offset_x4[j], offset_x4[j], tmp_x4[j]);
+
+            // XOR the plaintext block and offset into tmp.
+            xor_block(tmp_x4[j], offset_x4[j], in + (16 * j));
+
+            if (encrypting) {
+                // For encryption, XOR in the plaintext block to the sum.
+                xor_block(sum, in + (16 * j), sum);
+            }
+        }
+
+        // Run 4 instances of the block cipher in parallel.
+        if (encrypting) {
+            pjsimd_pyjamask_128_enc_x4(tmp_x4, k, tmp_x4);
+        } else {
+            pjsimd_pyjamask_128_dec_x4(tmp_x4, k, tmp_x4);
+        }
+
+        // Finally, XOR tmp and the offset into the output block. For decryption, also
+        // XOR the resulting plaintext block into the sum.
+        for (unsigned int j = 0; j < 4; j++) {
+            xor_block(out + (16 * j), offset_x4[j], tmp_x4[j]);
+
+            if (!encrypting) {
+                xor_block(sum, out + (16 * j), sum);
+            }
+        }
+
+        // Copy back offset from the final block.
+        memcpy(offset, offset_x4[3], 16);
+    }
 #endif
 
-#if USE_AVX2
+#if USE_AVX2 || USE_NEON
     // Process any remaining full blocks.
     for (; i <= inbytes / 16; i++, in = in + 16, out = out + 16) {
 #else

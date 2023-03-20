@@ -31,8 +31,10 @@
 
 #ifndef OPTIMISE_MIX_ROWS
 #define OPTIMISE_MIX_ROWS 1
-#endif
+#endif // OPTIMISE_MIX_ROWS
 
+#elif USE_NEON
+#include <arm_neon.h>
 #endif
 
 //==============================================================================
@@ -111,6 +113,20 @@ void pjsimd_load_state_x8(const uint8_t* plaintext, __m256i* state, int state_si
         state[i] = _mm256_shuffle_epi8(temp, shuffle_order);
     }
 }
+#elif USE_NEON
+void pjsimd_load_state_x4(const uint8_t* plaintext, uint32x4_t* state, int state_size)
+{
+    for (unsigned int i = 0; i < state_size; i++) {
+        for (unsigned int j = 0; j < 4; j++) {
+            uint32_t offset = (4 * i) + (4 * state_size * j);
+            uint32_t value =       plaintext[offset + 0];
+            value = (value << 8) | plaintext[offset + 1];
+            value = (value << 8) | plaintext[offset + 2];
+            value = (value << 8) | plaintext[offset + 3];
+            state[i][j] = value;
+        }
+    }
+}
 #endif
 
 void pjsimd_load_state(const uint8_t *plaintext, uint32_t *state, int state_size)
@@ -154,6 +170,20 @@ void pjsimd_unload_state_x8(uint8_t* ciphertext, const __m256i* state, int state
         
         if (state_size == 4) {
             ((uint32_t*)ciphertext)[(i * state_size) + 3] = state_3[i];
+        }
+    }
+}
+#elif USE_NEON
+void pjsimd_unload_state_x4(uint8_t *ciphertext, const uint32x4_t *state, int state_size)
+{
+    for (unsigned int i = 0; i < state_size; i++) {
+        for (unsigned int j = 0; j < 4; j++) {
+            uint32_t offset = (4 * i) + (4 * state_size * j);
+            uint32_t value = state[i][j];
+            ciphertext[offset + 0] = (uint8_t)(value >> 24);
+            ciphertext[offset + 1] = (uint8_t)(value >> 16);
+            ciphertext[offset + 2] = (uint8_t)(value >> 8);
+            ciphertext[offset + 3] = (uint8_t)(value >> 0);
         }
     }
 }
@@ -201,6 +231,28 @@ __m256i pjsimd_mat_mult_x8(__m256i mat_col, __m256i vec) {
             _mm256_srli_epi32(mat_col, 1),
             _mm256_slli_epi32(mat_col, 31));
 #endif
+    }
+
+    return res;
+}
+#elif USE_NEON
+uint32x4_t pjsimd_mat_mult_x4(uint32_t mat_col, uint32x4_t vec) {
+    uint32x4_t mask, res = vdupq_n_u32(0);
+    uint32x4_t zero = vdupq_n_u32(0);
+
+    for (int i = 31; i >= 0; i--) {
+        // vec >> i
+        // No non-immediate right shift, so left shift by negative i
+        mask = vshlq_u32(vec, vdupq_n_s32(-i));
+        // & 1
+        mask = vandq_u32(mask, vdupq_n_u32(1));
+        // -
+        mask = vsubq_u32(zero, mask);
+
+        // res ^= mask & mat_col;
+        res = veorq_u32(res, vandq_u32(mask, vdupq_n_u32(mat_col)));
+
+        right_rotate(mat_col)
     }
 
     return res;
@@ -290,6 +342,13 @@ void pjsimd_mix_rows_96_x8(__m256i* state)
     state[2] = pjsimd_mat_mult_x8(_mm256_set1_epi32(COL_M2), state[2]);
 #endif
 }
+#elif USE_NEON
+void pjsimd_mix_rows_96_x4(uint32x4_t* state)
+{
+    state[0] = pjsimd_mat_mult_x4(COL_M0, state[0]);
+    state[1] = pjsimd_mat_mult_x4(COL_M1, state[1]);
+    state[2] = pjsimd_mat_mult_x4(COL_M2, state[2]);
+}
 #endif
 
 void pjsimd_mix_rows_96(uint32_t *state)
@@ -316,6 +375,23 @@ void pjsimd_sub_bytes_96_x8(__m256i* state)
     state[1] = _mm256_xor_si256(state[1], state[0]);
     state[0] = _mm256_xor_si256(state[0], state[1]);
 }
+#elif USE_NEON
+void pjsimd_sub_bytes_96_x4(uint32x4_t* state)
+{
+    state[0] = veorq_u32(state[0], state[1]);
+    state[1] = veorq_u32(state[1], state[2]);
+    state[2] = veorq_u32(state[2], vandq_u32(state[0], state[1]));
+    state[0] = veorq_u32(state[0], vandq_u32(state[1], state[2]));
+    state[1] = veorq_u32(state[1], vandq_u32(state[0], state[2]));
+    state[2] = veorq_u32(state[2], state[0]);
+    state[0] = veorq_u32(state[0], state[1]);
+    state[2] = vmvnq_u32(state[2]);
+
+    // swap state[0] <-> state[1]
+    state[0] = veorq_u32(state[0], state[1]);
+    state[1] = veorq_u32(state[1], state[0]);
+    state[0] = veorq_u32(state[0], state[1]);
+}
 #endif
 
 void pjsimd_sub_bytes_96(uint32_t *state)
@@ -341,6 +417,13 @@ void pjsimd_add_round_key_96_x8(__m256i* state, const uint32_t* round_key, int r
     state[0] = _mm256_xor_si256(state[0], _mm256_set1_epi32(round_key[4 * r + 0]));
     state[1] = _mm256_xor_si256(state[1], _mm256_set1_epi32(round_key[4 * r + 1]));
     state[2] = _mm256_xor_si256(state[2], _mm256_set1_epi32(round_key[4 * r + 2]));
+}
+#elif USE_NEON
+void pjsimd_add_round_key_96_x4(uint32x4_t* state, const uint32_t* round_key, int r)
+{
+    state[0] = veorq_u32(state[0], vdupq_n_u32(round_key[4 * r + 0]));
+    state[1] = veorq_u32(state[1], vdupq_n_u32(round_key[4 * r + 1]));
+    state[2] = veorq_u32(state[2], vdupq_n_u32(round_key[4 * r + 2]));
 }
 #endif
 
@@ -371,6 +454,27 @@ void pjsimd_pyjamask_96_enc_x8(const uint8_t* plaintext, const uint8_t* key, uin
     pjsimd_add_round_key_96_x8(state, round_keys, NB_ROUNDS_96);
 
     pjsimd_unload_state_x8(ciphertext, state, STATE_SIZE_96);
+}
+#elif USE_NEON
+void pjsimd_pyjamask_96_enc_x4(const uint8_t* plaintext, const uint8_t* key, uint8_t* ciphertext)
+{
+    int r;
+    uint32x4_t state[STATE_SIZE_96];
+    uint32_t round_keys[4 * (NB_ROUNDS_KS + 1)];
+
+    pjsimd_key_schedule(key, round_keys);
+    pjsimd_load_state_x4(plaintext, state, STATE_SIZE_96);
+
+    for (r = 0; r < NB_ROUNDS_96; r++)
+    {
+        pjsimd_add_round_key_96_x4(state, round_keys, r);
+        pjsimd_sub_bytes_96_x4(state);
+        pjsimd_mix_rows_96_x4(state);
+    }
+
+    pjsimd_add_round_key_96_x4(state, round_keys, NB_ROUNDS_96);
+
+    pjsimd_unload_state_x4(ciphertext, state, STATE_SIZE_96);
 }
 #endif
 
@@ -414,6 +518,14 @@ void pjsimd_inv_mix_rows_96_x8(__m256i* state)
     state[2] = pjsimd_mat_mult_x8(_mm256_set1_epi32(COL_INV_M2), state[2]);
 #endif
 }
+#elif USE_NEON
+void pjsimd_inv_mix_rows_96_x4(uint32x4_t* state)
+{
+    state[0] = pjsimd_mat_mult_x4(COL_INV_M0, state[0]);
+    state[1] = pjsimd_mat_mult_x4(COL_INV_M1, state[1]);
+    state[2] = pjsimd_mat_mult_x4(COL_INV_M2, state[2]);
+
+}
 #endif
 
 void pjsimd_inv_mix_rows_96(uint32_t *state)
@@ -439,6 +551,23 @@ void pjsimd_inv_sub_bytes_96_x8(__m256i* state)
     state[2] = _mm256_xor_si256(state[2], _mm256_and_si256(state[0], state[1]));
     state[1] = _mm256_xor_si256(state[1], state[2]);
     state[0] = _mm256_xor_si256(state[0], state[1]);
+}
+#elif USE_NEON
+void pjsimd_inv_sub_bytes_96_x4(uint32x4_t* state)
+{
+    // swap state[0] <-> state[1]
+    state[0] = veorq_u32(state[0], state[1]);
+    state[1] = veorq_u32(state[1], state[0]);
+    state[0] = veorq_u32(state[0], state[1]);
+
+    state[2] = vmvnq_u32(state[2]);
+    state[0] = veorq_u32(state[0], state[1]);
+    state[2] = veorq_u32(state[2], state[0]);
+    state[1] = veorq_u32(state[1], vandq_u32(state[2], state[0]));
+    state[0] = veorq_u32(state[0], vandq_u32(state[1], state[2]));
+    state[2] = veorq_u32(state[2], vandq_u32(state[0], state[1]));
+    state[1] = veorq_u32(state[1], state[2]);
+    state[0] = veorq_u32(state[0], state[1]);
 }
 #endif
 
@@ -479,6 +608,27 @@ void pjsimd_pyjamask_96_dec_x8(const uint8_t* ciphertext, const uint8_t* key, ui
     }
 
     pjsimd_unload_state_x8(plaintext, state, STATE_SIZE_96);
+}
+#elif USE_NEON
+void pjsimd_pyjamask_96_dec_x4(const uint8_t* ciphertext, const uint8_t* key, uint8_t* plaintext)
+{
+    int r;
+    uint32x4_t state[STATE_SIZE_96];
+    uint32_t round_keys[4 * (NB_ROUNDS_KS + 1)];
+
+    pjsimd_key_schedule(key, round_keys);
+    pjsimd_load_state_x4(ciphertext, state, STATE_SIZE_96);
+
+    pjsimd_add_round_key_96_x4(state, round_keys, NB_ROUNDS_96);
+
+    for (r = NB_ROUNDS_96 - 1; r >= 0; r--)
+    {
+        pjsimd_inv_mix_rows_96_x4(state);
+        pjsimd_inv_sub_bytes_96_x4(state);
+        pjsimd_add_round_key_96_x4(state, round_keys, r);
+    }
+
+    pjsimd_unload_state_x4(plaintext, state, STATE_SIZE_96);
 }
 #endif
 
@@ -523,6 +673,14 @@ void pjsimd_mix_rows_128_x8(__m256i* state)
     state[3] = pjsimd_mat_mult_x8(_mm256_set1_epi32(COL_M3), state[3]);
 #endif
 }
+#elif USE_NEON
+void pjsimd_mix_rows_128_x4(uint32x4_t* state)
+{
+    state[0] = pjsimd_mat_mult_x4(COL_M0, state[0]);
+    state[1] = pjsimd_mat_mult_x4(COL_M1, state[1]);
+    state[2] = pjsimd_mat_mult_x4(COL_M2, state[2]);
+    state[3] = pjsimd_mat_mult_x4(COL_M3, state[3]);
+}
 #endif
 
 void pjsimd_mix_rows_128(uint32_t *state)
@@ -552,6 +710,22 @@ void pjsimd_sub_bytes_128_x8(__m256i* state) {
     state[3] = _mm256_xor_si256(state[3], state[2]);
     state[2] = _mm256_xor_si256(state[2], state[3]);
 }
+#elif USE_NEON
+void pjsimd_sub_bytes_128_x4(uint32x4_t* state) {
+    state[0] = veorq_u32(state[0], state[3]);
+    state[3] = veorq_u32(state[3], vandq_u32(state[0], state[1]));
+    state[0] = veorq_u32(state[0], vandq_u32(state[1], state[2]));
+    state[1] = veorq_u32(state[1], vandq_u32(state[2], state[3]));
+    state[2] = veorq_u32(state[2], vandq_u32(state[0], state[3]));
+    state[2] = veorq_u32(state[2], state[1]);
+    state[1] = veorq_u32(state[1], state[0]);
+    state[3] = vmvnq_u32(state[3]);
+
+    // swap state[2] <-> state[3]
+    state[2] = veorq_u32(state[2], state[3]);
+    state[3] = veorq_u32(state[3], state[2]);
+    state[2] = veorq_u32(state[2], state[3]);
+}
 #endif
 
 void pjsimd_sub_bytes_128(uint32_t *state)
@@ -578,6 +752,14 @@ void pjsimd_add_round_key_128_x8(__m256i* state, const uint32_t* round_key, int 
     state[1] = _mm256_xor_si256(state[1], _mm256_set1_epi32(round_key[4 * r + 1]));
     state[2] = _mm256_xor_si256(state[2], _mm256_set1_epi32(round_key[4 * r + 2]));
     state[3] = _mm256_xor_si256(state[3], _mm256_set1_epi32(round_key[4 * r + 3]));
+}
+#elif USE_NEON
+void pjsimd_add_round_key_128_x4(uint32x4_t *state, const uint32_t *round_key, int r)
+{
+    state[0] = veorq_u32(state[0], vdupq_n_u32(round_key[4*r+0]));
+    state[1] = veorq_u32(state[1], vdupq_n_u32(round_key[4*r+1]));
+    state[2] = veorq_u32(state[2], vdupq_n_u32(round_key[4*r+2]));
+    state[3] = veorq_u32(state[3], vdupq_n_u32(round_key[4*r+3]));
 }
 #endif
 
@@ -609,6 +791,27 @@ void pjsimd_pyjamask_128_enc_x8(const uint8_t* plaintext, const uint8_t* key, ui
     pjsimd_add_round_key_128_x8(state, round_keys, NB_ROUNDS_128);
 
     pjsimd_unload_state_x8(ciphertext, state, STATE_SIZE_128);
+}
+#elif USE_NEON
+void pjsimd_pyjamask_128_enc_x4(const uint8_t *plaintext, const uint8_t *key, uint8_t *ciphertext)
+{
+    int r;
+    uint32x4_t state[STATE_SIZE_128];
+    uint32_t round_keys[4*(NB_ROUNDS_KS+1)];
+
+    pjsimd_key_schedule(key, round_keys);
+    pjsimd_load_state_x4(plaintext, state, STATE_SIZE_128);
+
+    for (r=0; r<NB_ROUNDS_128; r++)
+    {
+        pjsimd_add_round_key_128_x4(state, round_keys, r);
+        pjsimd_sub_bytes_128_x4(state);
+        pjsimd_mix_rows_128_x4(state);
+    }
+
+    pjsimd_add_round_key_128_x4(state, round_keys, NB_ROUNDS_128);
+
+    pjsimd_unload_state_x4(ciphertext, state, STATE_SIZE_128);
 }
 #endif
 
@@ -653,6 +856,14 @@ void pjsimd_inv_mix_rows_128_x8(__m256i* state)
     state[3] = pjsimd_mat_mult_x8(_mm256_set1_epi32(COL_INV_M3), state[3]);
 #endif
 }
+#elif USE_NEON
+void pjsimd_inv_mix_rows_128_x4(uint32x4_t* state)
+{
+    state[0] = pjsimd_mat_mult_x4(COL_INV_M0, state[0]);
+    state[1] = pjsimd_mat_mult_x4(COL_INV_M1, state[1]);
+    state[2] = pjsimd_mat_mult_x4(COL_INV_M2, state[2]);
+    state[3] = pjsimd_mat_mult_x4(COL_INV_M3, state[3]);
+}
 #endif
 
 void pjsimd_inv_mix_rows_128(uint32_t *state)
@@ -679,6 +890,23 @@ void pjsimd_inv_sub_bytes_128_x8(__m256i* state)
     state[0] = _mm256_xor_si256(state[0], _mm256_and_si256(state[1], state[2]));
     state[3] = _mm256_xor_si256(state[3], _mm256_and_si256(state[0], state[1]));
     state[0] = _mm256_xor_si256(state[0], state[3]);
+}
+#elif USE_NEON
+void pjsimd_inv_sub_bytes_128_x4(uint32x4_t *state)
+{
+    // swap state[2] <-> state[3]
+    state[2] = veorq_u32(state[2], state[3]);
+    state[3] = veorq_u32(state[3], state[2]);
+    state[2] = veorq_u32(state[2], state[3]);
+
+    state[3] = vmvnq_u32(state[3]);
+    state[1] = veorq_u32(state[1], state[0]);
+    state[2] = veorq_u32(state[2], state[1]);
+    state[2] = veorq_u32(state[2], vandq_u32(state[3], state[0]));
+    state[1] = veorq_u32(state[1], vandq_u32(state[2], state[3]));
+    state[0] = veorq_u32(state[0], vandq_u32(state[1], state[2]));
+    state[3] = veorq_u32(state[3], vandq_u32(state[0], state[1]));
+    state[0] = veorq_u32(state[0], state[3]);
 }
 #endif
 
@@ -719,6 +947,27 @@ void pjsimd_pyjamask_128_dec_x8(const uint8_t* ciphertext, const uint8_t* key, u
     }
 
     pjsimd_unload_state_x8(plaintext, state, STATE_SIZE_128);
+}
+#elif USE_NEON
+void pjsimd_pyjamask_128_dec_x4(const uint8_t *ciphertext, const uint8_t *key, uint8_t *plaintext)
+{
+    int r;
+    uint32x4_t state[STATE_SIZE_128];
+    uint32_t round_keys[4*(NB_ROUNDS_KS+1)];
+
+    pjsimd_key_schedule(key, round_keys);
+    pjsimd_load_state_x4(ciphertext, state, STATE_SIZE_128);
+
+    pjsimd_add_round_key_128_x4(state, round_keys, NB_ROUNDS_128);
+
+    for (r=NB_ROUNDS_128-1; r>=0; r--)
+    {
+        pjsimd_inv_mix_rows_128_x4(state);
+        pjsimd_inv_sub_bytes_128_x4(state);
+        pjsimd_add_round_key_128_x4(state, round_keys, r);
+    }
+
+    pjsimd_unload_state_x4(plaintext, state, STATE_SIZE_128);
 }
 #endif
 
