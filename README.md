@@ -17,8 +17,8 @@ They may however work on other platforms e.g. Cygwin.
 
 Clone the repo, and `cd` into the project root directory (containing CMakeLists.txt).
 
-Build the project using the following CMake commands:
-`cmake -DCMAKE_BUILD_TYPE=Release -S . -B out`
+Build the project using the following CMake commands:  
+`cmake -DCMAKE_BUILD_TYPE=Release -S . -B out`  
 `cmake --build out`
 
 This will build the testbench executable, which will be located in `out/testbench`.
@@ -30,8 +30,8 @@ Note: These instructions have been tested on the following platform:
 
 Clone the repo, and `cd` into the project root directory (containing CMakeLists.txt).
 
-Build the project using the following CMake commands:
-`cmake -S . -B out`
+Build the project using the following CMake commands:  
+`cmake -S . -B out`  
 `cmake --build out --config Release`
 
 This will build the testbench executable, which will be located in `out\Release\testbench.exe`.
