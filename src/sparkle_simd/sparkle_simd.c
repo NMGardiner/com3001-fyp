@@ -22,7 +22,6 @@
 #include <stdio.h>
 #include "sparkle_simd.h"
 
-#include "platform_defines.h"
 #include <string.h>
 
 // Test if gathering elements with a set stride (e.g. 0, 2, 4, 6...) is any faster
@@ -30,9 +29,9 @@
 // needing additional permute instructions to store, but look into this more!
 #define SHUFFLE_STATE 1 
 
-#if USE_AVX2
+#if __AVX2__
 #include "sparkle_simd/alzette_avx_impls.h"
-#elif USE_NEON
+#elif __ARM_NEON
 #include <arm_neon.h>
 #endif
 
@@ -40,17 +39,15 @@
 #define ELL(x) (ROT(((x) ^ ((x) << 16)), 16))
 
 
-#if !(USE_AVX2)
+#if !(__AVX2__)
 // Round constants
 static const uint32_t RCON[MAX_BRANCHES] = {      \
   0xB7E15162, 0xBF715880, 0x38B4DA56, 0x324E7738, \
   0xBB1185EB, 0x4F7C7B57, 0xCFBFA1C8, 0xC2B3293D  \
 };
-#endif // !(USE_AVX2 || USE_NEON)
+#endif // !(__AVX2__ || __ARM_NEON)
 
-#if USE_AVX2
-
-#elif USE_NEON
+#if __ARM_NEON
 // 128-bit registers, so split into 2.
 static const uint32x4x2_t round_constants = {{
   { 0xB7E15162, 0xBF715880, 0x38B4DA56, 0x324E7738 },
@@ -58,9 +55,7 @@ static const uint32x4x2_t round_constants = {{
 }};
 #endif
 
-#if USE_AVX2
-
-#elif USE_NEON
+#if __ARM_NEON
 __inline uint32x4_t rot_simd(uint32x4_t in, int count) {
   return vorrq_u32(
     vshrq_n_u32(in, count),
@@ -111,9 +106,9 @@ void sparkle_simd(uint32_t *state, int brans, int steps)
     state[3] ^= i;
 
     // ARXBOX layer
-#if USE_AVX2
+#if __AVX2__
     alzette_avx_03(state, brans);
-#elif USE_NEON
+#elif __ARM_NEON
     // Process the first 4 pairs of the state.
     alzette_simd(state, 0);
 

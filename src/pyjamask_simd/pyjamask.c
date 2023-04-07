@@ -24,16 +24,14 @@
 
 #include <stdint.h>
 
-#include "platform_defines.h"
-
-#if USE_AVX2
+#if __AVX2__
 #include <immintrin.h>
 
 #ifndef OPTIMISE_MIX_ROWS
 #define OPTIMISE_MIX_ROWS 1
 #endif // OPTIMISE_MIX_ROWS
 
-#elif USE_NEON
+#elif __ARM_NEON
 #include <arm_neon.h>
 #endif
 
@@ -86,7 +84,7 @@
 //=== Common functions
 //==============================================================================
 
-#if USE_AVX2
+#if __AVX2__
 // The serial implementation packs the 8-bit integers into 32-bit ints in the reversed
 // order, so we need to shuffle after loading to flip the order of bytes within each
 // 32-bit int in the vector register to match this reverse order.
@@ -113,7 +111,7 @@ void pjsimd_load_state_x8(const uint8_t* plaintext, __m256i* state, int state_si
         state[i] = _mm256_shuffle_epi8(temp, shuffle_order);
     }
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_load_state_x4(const uint8_t* plaintext, uint32x4_t* state, int state_size)
 {
     for (unsigned int i = 0; i < state_size; i++) {
@@ -142,7 +140,7 @@ void pjsimd_load_state(const uint8_t *plaintext, uint32_t *state, int state_size
     }
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_unload_state_x8(uint8_t* ciphertext, const __m256i* state, int state_size)
 {
     __m256i shuffle_order = _mm256_setr_epi8(
@@ -173,7 +171,7 @@ void pjsimd_unload_state_x8(uint8_t* ciphertext, const __m256i* state, int state
         }
     }
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_unload_state_x4(uint8_t *ciphertext, const uint32x4_t *state, int state_size)
 {
     for (unsigned int i = 0; i < state_size; i++) {
@@ -202,7 +200,7 @@ void pjsimd_unload_state(uint8_t *ciphertext, const uint32_t *state, int state_s
     }
 }
 
-#if USE_AVX2
+#if __AVX2__
 #if OPTIMISE_MIX_ROWS
 __m256i pjsimd_mat_mult_x8(uint32_t mat_col, __m256i vec) {
 #else
@@ -235,7 +233,7 @@ __m256i pjsimd_mat_mult_x8(__m256i mat_col, __m256i vec) {
 
     return res;
 }
-#elif USE_NEON
+#elif __ARM_NEON
 uint32x4_t pjsimd_mat_mult_x4(uint32_t mat_col, uint32x4_t vec) {
     uint32x4_t mask, res = vdupq_n_u32(0);
     uint32x4_t zero = vdupq_n_u32(0);
@@ -328,7 +326,7 @@ void pjsimd_key_schedule(const uint8_t *key, uint32_t* round_keys)
 //=== Pyjamask-96 (encryption)
 //==============================================================================
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_mix_rows_96_x8(__m256i* state)
 {
 #if OPTIMISE_MIX_ROWS
@@ -342,7 +340,7 @@ void pjsimd_mix_rows_96_x8(__m256i* state)
     state[2] = pjsimd_mat_mult_x8(_mm256_set1_epi32(COL_M2), state[2]);
 #endif
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_mix_rows_96_x4(uint32x4_t* state)
 {
     state[0] = pjsimd_mat_mult_x4(COL_M0, state[0]);
@@ -358,7 +356,7 @@ void pjsimd_mix_rows_96(uint32_t *state)
     state[2] = pjsimd_mat_mult(COL_M2, state[2]);
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_sub_bytes_96_x8(__m256i* state)
 {
     state[0] = _mm256_xor_si256(state[0], state[1]);
@@ -375,7 +373,7 @@ void pjsimd_sub_bytes_96_x8(__m256i* state)
     state[1] = _mm256_xor_si256(state[1], state[0]);
     state[0] = _mm256_xor_si256(state[0], state[1]);
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_sub_bytes_96_x4(uint32x4_t* state)
 {
     state[0] = veorq_u32(state[0], state[1]);
@@ -411,14 +409,14 @@ void pjsimd_sub_bytes_96(uint32_t *state)
     state[0] ^= state[1];
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_add_round_key_96_x8(__m256i* state, const uint32_t* round_key, int r)
 {
     state[0] = _mm256_xor_si256(state[0], _mm256_set1_epi32(round_key[4 * r + 0]));
     state[1] = _mm256_xor_si256(state[1], _mm256_set1_epi32(round_key[4 * r + 1]));
     state[2] = _mm256_xor_si256(state[2], _mm256_set1_epi32(round_key[4 * r + 2]));
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_add_round_key_96_x4(uint32x4_t* state, const uint32_t* round_key, int r)
 {
     state[0] = veorq_u32(state[0], vdupq_n_u32(round_key[4 * r + 0]));
@@ -434,7 +432,7 @@ void pjsimd_add_round_key_96(uint32_t *state, const uint32_t *round_key, int r)
     state[2] ^= round_key[4*r+2];
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_pyjamask_96_enc_x8(const uint8_t* plaintext, const uint8_t* key, uint8_t* ciphertext)
 {
     int r;
@@ -455,7 +453,7 @@ void pjsimd_pyjamask_96_enc_x8(const uint8_t* plaintext, const uint8_t* key, uin
 
     pjsimd_unload_state_x8(ciphertext, state, STATE_SIZE_96);
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_pyjamask_96_enc_x4(const uint8_t* plaintext, const uint8_t* key, uint8_t* ciphertext)
 {
     int r;
@@ -504,7 +502,7 @@ void pjsimd_pyjamask_96_enc(const uint8_t *plaintext, const uint8_t *key, uint8_
 //=== Pyjamask-96 (decryption)
 //==============================================================================
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_inv_mix_rows_96_x8(__m256i* state)
 {
 #if OPTIMISE_MIX_ROWS
@@ -518,7 +516,7 @@ void pjsimd_inv_mix_rows_96_x8(__m256i* state)
     state[2] = pjsimd_mat_mult_x8(_mm256_set1_epi32(COL_INV_M2), state[2]);
 #endif
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_inv_mix_rows_96_x4(uint32x4_t* state)
 {
     state[0] = pjsimd_mat_mult_x4(COL_INV_M0, state[0]);
@@ -535,7 +533,7 @@ void pjsimd_inv_mix_rows_96(uint32_t *state)
     state[2] = pjsimd_mat_mult(COL_INV_M2, state[2]);
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_inv_sub_bytes_96_x8(__m256i* state)
 {
     // swap state[0] <-> state[1]
@@ -552,7 +550,7 @@ void pjsimd_inv_sub_bytes_96_x8(__m256i* state)
     state[1] = _mm256_xor_si256(state[1], state[2]);
     state[0] = _mm256_xor_si256(state[0], state[1]);
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_inv_sub_bytes_96_x4(uint32x4_t* state)
 {
     // swap state[0] <-> state[1]
@@ -588,7 +586,7 @@ void pjsimd_inv_sub_bytes_96(uint32_t *state)
     state[0] ^= state[1];
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_pyjamask_96_dec_x8(const uint8_t* ciphertext, const uint8_t* key, uint8_t* plaintext)
 {
     int r;
@@ -609,7 +607,7 @@ void pjsimd_pyjamask_96_dec_x8(const uint8_t* ciphertext, const uint8_t* key, ui
 
     pjsimd_unload_state_x8(plaintext, state, STATE_SIZE_96);
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_pyjamask_96_dec_x4(const uint8_t* ciphertext, const uint8_t* key, uint8_t* plaintext)
 {
     int r;
@@ -657,7 +655,7 @@ void pjsimd_pyjamask_96_dec(const uint8_t *ciphertext, const uint8_t *key, uint8
 //=== Pyjamask-128 (encryption)
 //==============================================================================
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_mix_rows_128_x8(__m256i* state)
 {
 #if OPTIMISE_MIX_ROWS
@@ -673,7 +671,7 @@ void pjsimd_mix_rows_128_x8(__m256i* state)
     state[3] = pjsimd_mat_mult_x8(_mm256_set1_epi32(COL_M3), state[3]);
 #endif
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_mix_rows_128_x4(uint32x4_t* state)
 {
     state[0] = pjsimd_mat_mult_x4(COL_M0, state[0]);
@@ -691,7 +689,7 @@ void pjsimd_mix_rows_128(uint32_t *state)
     state[3] = pjsimd_mat_mult(COL_M3, state[3]);
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_sub_bytes_128_x8(__m256i* state) {
     state[0] = _mm256_xor_si256(state[0], state[3]);
     state[3] = _mm256_xor_si256(state[3], _mm256_and_si256(state[0], state[1]));
@@ -710,7 +708,7 @@ void pjsimd_sub_bytes_128_x8(__m256i* state) {
     state[3] = _mm256_xor_si256(state[3], state[2]);
     state[2] = _mm256_xor_si256(state[2], state[3]);
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_sub_bytes_128_x4(uint32x4_t* state) {
     state[0] = veorq_u32(state[0], state[3]);
     state[3] = veorq_u32(state[3], vandq_u32(state[0], state[1]));
@@ -745,7 +743,7 @@ void pjsimd_sub_bytes_128(uint32_t *state)
     state[2] ^= state[3];
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_add_round_key_128_x8(__m256i* state, const uint32_t* round_key, int r)
 {
     state[0] = _mm256_xor_si256(state[0], _mm256_set1_epi32(round_key[4 * r + 0]));
@@ -753,7 +751,7 @@ void pjsimd_add_round_key_128_x8(__m256i* state, const uint32_t* round_key, int 
     state[2] = _mm256_xor_si256(state[2], _mm256_set1_epi32(round_key[4 * r + 2]));
     state[3] = _mm256_xor_si256(state[3], _mm256_set1_epi32(round_key[4 * r + 3]));
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_add_round_key_128_x4(uint32x4_t *state, const uint32_t *round_key, int r)
 {
     state[0] = veorq_u32(state[0], vdupq_n_u32(round_key[4*r+0]));
@@ -771,7 +769,7 @@ void pjsimd_add_round_key_128(uint32_t *state, const uint32_t *round_key, int r)
     state[3] ^= round_key[4*r+3];
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_pyjamask_128_enc_x8(const uint8_t* plaintext, const uint8_t* key, uint8_t* ciphertext) {
     int r;
     __m256i state[STATE_SIZE_128];
@@ -792,7 +790,7 @@ void pjsimd_pyjamask_128_enc_x8(const uint8_t* plaintext, const uint8_t* key, ui
 
     pjsimd_unload_state_x8(ciphertext, state, STATE_SIZE_128);
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_pyjamask_128_enc_x4(const uint8_t *plaintext, const uint8_t *key, uint8_t *ciphertext)
 {
     int r;
@@ -841,7 +839,7 @@ void pjsimd_pyjamask_128_enc(const uint8_t *plaintext, const uint8_t *key, uint8
 //=== Pyjamask-128 (decryption)
 //==============================================================================
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_inv_mix_rows_128_x8(__m256i* state)
 {
 #if OPTIMISE_MIX_ROWS
@@ -856,7 +854,7 @@ void pjsimd_inv_mix_rows_128_x8(__m256i* state)
     state[3] = pjsimd_mat_mult_x8(_mm256_set1_epi32(COL_INV_M3), state[3]);
 #endif
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_inv_mix_rows_128_x4(uint32x4_t* state)
 {
     state[0] = pjsimd_mat_mult_x4(COL_INV_M0, state[0]);
@@ -874,7 +872,7 @@ void pjsimd_inv_mix_rows_128(uint32_t *state)
     state[3] = pjsimd_mat_mult(COL_INV_M3, state[3]);
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_inv_sub_bytes_128_x8(__m256i* state)
 {
     // swap state[2] <-> state[3]
@@ -891,7 +889,7 @@ void pjsimd_inv_sub_bytes_128_x8(__m256i* state)
     state[3] = _mm256_xor_si256(state[3], _mm256_and_si256(state[0], state[1]));
     state[0] = _mm256_xor_si256(state[0], state[3]);
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_inv_sub_bytes_128_x4(uint32x4_t *state)
 {
     // swap state[2] <-> state[3]
@@ -927,7 +925,7 @@ void pjsimd_inv_sub_bytes_128(uint32_t *state)
     state[0] ^= state[3];
 }
 
-#if USE_AVX2
+#if __AVX2__
 void pjsimd_pyjamask_128_dec_x8(const uint8_t* ciphertext, const uint8_t* key, uint8_t* plaintext)
 {
     int r;
@@ -948,7 +946,7 @@ void pjsimd_pyjamask_128_dec_x8(const uint8_t* ciphertext, const uint8_t* key, u
 
     pjsimd_unload_state_x8(plaintext, state, STATE_SIZE_128);
 }
-#elif USE_NEON
+#elif __ARM_NEON
 void pjsimd_pyjamask_128_dec_x4(const uint8_t *ciphertext, const uint8_t *key, uint8_t *plaintext)
 {
     int r;

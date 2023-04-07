@@ -51,9 +51,7 @@ Date : 25/02/2019
 
 #include "pyjamask_simd/pyjamask.h"
 
-#include "platform_defines.h"
-
-#if USE_AVX2
+#if __AVX2__
 #include <stdint.h>
 #endif
 
@@ -195,7 +193,7 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
     /* Process any whole blocks */
 
     // Don't combine AVX2/NEON into one, as we may do 4 blocks with AVX eventually.
-#if USE_AVX2
+#if __AVX2__
     // Process groups of 8 128-bit blocks first.
     for (i = 1; i + 7 <= (inbytes / 16); i += 8, in += (16 * 8), out += (16 * 8)) {
         block tmp_x8[8];
@@ -239,7 +237,7 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
         // Copy back offset from the final block.
         memcpy(offset, offset_x8[7], 16);
     }
-#elif USE_NEON
+#elif __ARM_NEON
     // Process groups of 4 128-bit blocks first.
     for (i = 1; i + 3 <= (inbytes / 16); i += 4, in += (16 * 4), out += (16 * 4)) {
         block tmp_x4[4];
@@ -285,7 +283,7 @@ static int pj128simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned ch
     }
 #endif
 
-#if USE_AVX2 || USE_NEON
+#if __AVX2__ || __ARM_NEON
     // Process any remaining full blocks.
     for (; i <= inbytes / 16; i++, in = in + 16, out = out + 16) {
 #else
