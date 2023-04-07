@@ -1,25 +1,15 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(com3001-fyp C)
 
-#
-# Compile options must come before add_executable()!!!
-#
-
-add_compile_options(
-	#-std=c99
-	-Wall
-	#-fsanitize=address,undefined
-)
-
-IF (WIN32)
-# -mavx2 equivalent for MSVC.
-# Left out for now, since enabling it seems to make the optimised code run slower?
-# AVX2 instructions like vpunpckldq are still in the disassembly whether the flag is
-# added or not, so I can't figure out what's changing.
-add_compile_options(/arch:AVX2)
+# We check if we are compiling for ARM, in which case we enable ARM Neon.
+# If we are not compiling for ARM, we enable AVX2. MSVC uses a different form for the
+# compiler options, so handle that accordingly.
+IF(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
+	add_compile_options(-Wall -Wextra -Wshadow -mfpu=neon)
+ELSEIF(MSVC)
+	add_compile_options(/Wall /arch:AVX2)
 ELSE()
-# MSVC doesn't like these flags.
-add_compile_options(-Wextra -Wshadow -mfpu=neon)
+	add_compile_options(-Wall -Wextra -Wshadow -mavx2)
 ENDIF()
 
 add_executable(testbench
@@ -95,5 +85,7 @@ target_include_directories(testbench PRIVATE
 	"src/"
 )
 
-# Link the the math library for sqrt etc on GCC.
-target_link_libraries(testbench PRIVATE m)
+# MSVC does not require linking the math library for sqrt, but GCC etc do.
+IF(NOT MSVC)
+	target_link_libraries(testbench PRIVATE m)
+ENDIF()

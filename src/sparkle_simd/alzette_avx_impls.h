@@ -47,7 +47,7 @@ __inline __m256i rot_256(__m256i in, int n) {
 }
 
 __inline __m128i rot_128(__m128i in, int count) {
-    return _mm_or_epi32(
+    return _mm_or_si128(
         _mm_srli_epi32(in, count),
         _mm_slli_epi32(in, 32 - count));
 }
