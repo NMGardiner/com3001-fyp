@@ -225,9 +225,6 @@ __inline void alzette_avx_03(uint32_t* state, int brans) {
         // state_lo = [0, 1, 2, 3, 4, 5, 6, 7]
         // state_hi = [8, 9, 10, 11, 12, 13, 14, 15]
         // This is then copied back to `state` using memcpy.
-        // A different length is required for the second memcpy, and depends on `brans`.
-        // e.g. for Sparkle384, brans = 6. Therefore there are 12 32-bit elements. The first
-        // memcpy operation copies the first 8, so the latter must copy (2 * 6) - 8 = 4 elements.
         __m256i state_lo = _mm256_unpacklo_epi32(state_j, state_j1);
         __m256i state_hi = _mm256_unpackhi_epi32(state_j, state_j1);
 
@@ -622,8 +619,8 @@ __inline void sparkle_unrolled_test_01(uint32_t* state, int brans, int steps) {
             state[INDEX_1] ^= RCON[i % MAX_BRANCHES];
             state[INDEX_3] ^= i;
 
-            state_j = _mm256_loadu_epi32(state);
-            state_j1 = _mm256_loadu_epi32(state + 8);
+            state_j = _mm256_loadu_si256(state);
+            state_j1 = _mm256_loadu_si256(state + 8);
         }
 
         ALZETTE_256(state_j, state_j1, *rc_256_shuffled);
