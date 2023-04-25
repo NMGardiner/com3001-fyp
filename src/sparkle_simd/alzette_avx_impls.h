@@ -248,33 +248,21 @@ __inline void alzette_avx_03(uint32_t* state, int brans) {
         memcpy(state + 4, (uint32_t*)&state_hi, 16);
 
         if (brans == 6) {
-            uint32_t rc = RCON[8 >> 1];
-            state[8] += ROT(state[9], 31);
-            state[9] ^= ROT(state[8], 24);
-            state[8] ^= rc;
-            state[8] += ROT(state[9], 17);
-            state[9] ^= ROT(state[8], 17);
-            state[8] ^= rc;
-            state[8] += state[9];
-            state[9] ^= ROT(state[8], 31);
-            state[8] ^= rc;
-            state[8] += ROT(state[9], 24);
-            state[9] ^= ROT(state[8], 16);
-            state[8] ^= rc;
-
-            rc = RCON[10 >> 1];
-            state[10] += ROT(state[11], 31);
-            state[11] ^= ROT(state[10], 24);
-            state[10] ^= rc;
-            state[10] += ROT(state[11], 17);
-            state[11] ^= ROT(state[10], 17);
-            state[10] ^= rc;
-            state[10] += state[11];
-            state[11] ^= ROT(state[10], 31);
-            state[10] ^= rc;
-            state[10] += ROT(state[11], 24);
-            state[11] ^= ROT(state[10], 16);
-            state[10] ^= rc;
+            for (unsigned int j = 8; j < 12; j += 2) {
+                uint32_t rc = RCON[j >> 1];
+                state[j] += ROT(state[j + 1], 31);
+                state[j + 1] ^= ROT(state[j], 24);
+                state[j] ^= rc;
+                state[j] += ROT(state[j + 1], 17);
+                state[j + 1] ^= ROT(state[j], 17);
+                state[j] ^= rc;
+                state[j] += state[j + 1];
+                state[j + 1] ^= ROT(state[j], 31);
+                state[j] ^= rc;
+                state[j] += ROT(state[j + 1], 24);
+                state[j + 1] ^= ROT(state[j], 16);
+                state[j] ^= rc;
+            }
         }
     }
 }
