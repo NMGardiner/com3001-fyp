@@ -225,7 +225,7 @@ __m256i pjsimd_mat_mult_x8(__m256i mat_col, __m256i vec) {
         res = _mm256_xor_si256(res, _mm256_and_si256(mask, mat_col));
 
         // right_rotate(mat_col);
-        mat_col = _mm256_or_epi32(
+        mat_col = _mm256_or_si256(
             _mm256_srli_epi32(mat_col, 1),
             _mm256_slli_epi32(mat_col, 31));
 #endif
