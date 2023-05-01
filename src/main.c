@@ -207,6 +207,10 @@ long long clean_and_calculate_average(long long* in, unsigned int in_len, long l
             sum += pow((temp_array[j] - mean), 2);
         }
 
+        if (sum == 0.0f) {
+            continue;
+        }
+
         // Calculate the standard deviation of the data for this pass.
         double sd = sqrt(sum / (double)new_len);
 
@@ -489,11 +493,11 @@ void time_aead(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struct ae
         }
 
         double diff = ((double)(ref_enc_average - simd_enc_average) / ref_enc_average) * 100.0f;
-        printf("Encryption Improvement: %.2f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
+        printf("Encryption Improvement: %.1f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
             ref_enc_average, simd_enc_average, ref_enc_removed, simd_enc_removed);
 
         diff = ((double)(ref_dec_average - simd_dec_average) / ref_dec_average) * 100.0f;
-        printf("Decrpytion Improvement: %.2f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
+        printf("Decrpytion Improvement: %.1f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
             ref_dec_average, simd_dec_average, ref_dec_removed, simd_dec_removed);
     } else {
         printf("[ERROR] %s timing yielded incorrect results!\n", variant->name);
@@ -689,7 +693,7 @@ void time_esch(unsigned int num_runs, ULLInt input_len, struct esch_variant* var
         }
 
         double diff = ((double)(ref_average - simd_average) / ref_average) * 100.0f;
-        printf("Hashing Improvement: %.2f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
+        printf("Hashing Improvement: %.1f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
             ref_average, simd_average, ref_removed, simd_removed);
     } else {
         printf("[ERROR] %s timing yielded incorrect results!\n", variant->name);
