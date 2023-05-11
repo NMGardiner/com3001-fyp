@@ -209,8 +209,7 @@ static int pj96simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned cha
             calc_L_i(tmp_x8[j], ldollar, j + i);
 
             // XOR L_i into the offset.
-            memcpy(offset_x8[j], (j == 0) ? offset : offset_x8[j - 1], 12);
-            xor_block(offset_x8[j], offset_x8[j], tmp_x8[j]);
+            xor_block(offset_x8[j], (j == 0) ? offset : offset_x8[j - 1], tmp_x8[j]);
 
             // XOR the plaintext block and offset into tmp.
             xor_block(tmp_x8[j], offset_x8[j], in + (12 * j));
@@ -254,8 +253,7 @@ static int pj96simd_ocb_crypt(unsigned char *out, unsigned char *k, unsigned cha
             calc_L_i(tmp_x4[j], ldollar, j + i);
 
             // XOR L_i into the offset.
-            memcpy(offset_x4[j], (j == 0) ? offset : offset_x4[j - 1], 12);
-            xor_block(offset_x4[j], offset_x4[j], tmp_x4[j]);
+            xor_block(offset_x4[j], (j == 0) ? offset : offset_x4[j - 1], tmp_x4[j]);
 
             // XOR the plaintext block and offset into tmp.
             xor_block(tmp_x4[j], offset_x4[j], in + (12 * j));
