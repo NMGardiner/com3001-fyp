@@ -821,10 +821,11 @@ int main(void)
         pj128simd_crypto_aead_decrypt
     };
 
-    ULLInt encryption_input_len = 1 << 16;
-    ULLInt encryption_ad_len = 1 << 12;
-    ULLInt hash_input_len = 1 << 16;
+    ULLInt encryption_input_len = 1 << 12;
+    ULLInt encryption_ad_len = 1 << 8;
+    ULLInt hash_input_len = 1 << 12;
 
+#if 1
     time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s128128, 0);
     time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s192192, 0);
     time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &s256128, 0);
@@ -836,12 +837,13 @@ int main(void)
     time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &pj96, 0);
     time_aead(NUM_RESULTS, encryption_input_len, encryption_ad_len, &pj128, 0);
 
-    // Proof of concept for measuring changes in parameters. Use this later?
-#if 0
-    unsigned int test_input_lens[8] = { 0, 8, 64, 128, 256, 512, 1024, 65536 };
-    for (unsigned int i = 0; i < 8; i++) {
-        printf("\n\ninput_len = %u\n", test_input_lens[i]);
-        time_aead(NUM_RESULTS, test_input_lens[i], encryption_ad_len, &pj128, 0);
+    // Used for generating results for different message lengths. Used in Pyjamask
+    // performance analysis.
+#else
+    unsigned int test_input_lens[7] = { 7, 8, 9, 10, 11, 12, 13 };
+    for (unsigned int i = 0; i < 7; i++) {
+        printf("\n\ninput_len = %u\n", 1 << test_input_lens[i]);
+        time_aead(NUM_RESULTS, 1 << test_input_lens[i], 1 << (test_input_lens[i] - 4), &pj128, 0);
     }
 #endif
 
