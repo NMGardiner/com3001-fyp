@@ -497,7 +497,7 @@ void time_aead(unsigned int num_runs, ULLInt input_len, ULLInt ad_len, struct ae
             ref_enc_average, simd_enc_average, ref_enc_removed, simd_enc_removed);
 
         diff = ((double)(ref_dec_average - simd_dec_average) / ref_dec_average) * 100.0f;
-        printf("Decrpytion Improvement: %.1f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
+        printf("Decryption Improvement: %.1f%% (%lldus -> %lldus) (Outliers: %u / %u)\n", diff,
             ref_dec_average, simd_dec_average, ref_dec_removed, simd_dec_removed);
     } else {
         printf("[ERROR] %s timing yielded incorrect results!\n", variant->name);
